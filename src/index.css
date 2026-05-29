@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-red-650: #dc2626;
+  --color-red-655: #b91c1c;
+  --color-red-550: #ef4444;
+  --color-blue-650: #2563eb;
+  --color-blue-750: #1d4ed8;
+  --color-slate-55: #f1f5f9;
+  --color-slate-150: #e2e8f0;
+  --color-slate-250: #cbd5e1;
+  --color-slate-350: #94a3b8;
+  --color-slate-450: #64748b;
+  --color-slate-550: #475569;
+  --color-slate-650: #334155;
+  --color-slate-855: #0f172a;
+  --color-amber-150: #fde68a;
+  --color-amber-250: #fcd34d;
+  --color-amber-550: #d97706;
+  --color-amber-850: #78350f;
+  --color-emerald-150: #a7f3d0;
+  --color-emerald-650: #059669;
+  --color-pink-150: #fbcfe8;
+  --color-pink-750: #be185d;
+  --color-indigo-150: #c7d2fe;
+  --color-indigo-750: #4338ca;
+  --color-indigo-650: #4f46e5;
+  --color-rose-150: #fecdd3;
+  --color-rose-250: #fda4af;
+}
+
+/* Custom RTL-specific styles and styling improvements */
+body {
+  direction: rtl;
+  text-align: right;
+  background-color: #f6f8fb; /* Extremely polished off-white luxury background */
+  color: #1e293b; /* Deep slate text */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Beautiful custom scrollbar for luxury feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Luxury card container presets */
+.premium-card {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.75);
+  box-shadow: 0 4px 20px -12px rgba(30, 41, 59, 0.05), 0 1px 3px -1px rgba(30, 41, 59, 0.02);
+  border-radius: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.premium-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 12px 30px -12px rgba(99, 102, 241, 0.12), 0 2px 8px -1px rgba(99, 102, 241, 0.04);
+}
+
+/* Glassmorphism containers */
+.glass-container {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Custom interactive input elements */
+.premium-input {
+  box-shadow: inset 0 1px 2px 0 rgba(15, 23, 42, 0.02);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.premium-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12), inset 0 1px 2px 0 rgba(15, 23, 42, 0.02);
+}
+
+/* Subtle glow badge keyframes */
+@keyframes breathing-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(99, 102, 241, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.35);
+  }
+}
+.glow-pulse {
+  animation: breathing-glow 3s infinite ease-in-out;
+}
+
+/* Pristine Print & PDF Styles */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide navigation, sidebars, buttons, form controls, and dialogs when printing */
+  header, aside, button, select, input, .print\:hidden, [role="dialog"], .fixed {
+    display: none !important;
+  }
+
+  /* Make main container take full width and remove scroll/shadows */
+  main, .space-y-6, .grid {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Ensure cards and tables print beautifully with borders and exact backgrounds */
+  .bg-white, .bg-slate-50, .bg-emerald-50, .bg-amber-50 {
+    background-color: inherit !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 8px !important;
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "appId": "com.mohamedabdella.teacher",
+  "appName": "TEACHER",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
