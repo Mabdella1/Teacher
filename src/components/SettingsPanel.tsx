@@ -410,7 +410,7 @@ export default function SettingsPanel({
                 { id: 'monthly', name: 'شهرياً' },
                 { id: 'disabled', name: 'معطل' },
               ].map((opt) => {
-                const isSelected = (preferences.autoBackupDownloadInterval || 'weekly') === opt.id;
+                const isSelected = (preferences.autoBackupDownloadInterval || 'disabled') === opt.id;
                 return (
                   <button
                     type="button"

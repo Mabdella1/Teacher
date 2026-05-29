@@ -22,7 +22,7 @@ const DEFAULT_PREFERENCES: TeacherPreferences = {
   currency: 'ج.م',
   passcode: '', // Guided setup on first load
   enableWhatsApp24hReminders: true,
-  autoBackupDownloadInterval: 'weekly',
+  autoBackupDownloadInterval: 'disabled',
 };
 
 const DEFAULT_STUDENTS: Student[] = [
@@ -131,6 +131,11 @@ export default function App() {
     if (storedPrefs) {
       try {
         loadedPrefs = JSON.parse(storedPrefs);
+        // Force-disable auto backup download if it's currently set to 'weekly' (previous default)
+        if (loadedPrefs.autoBackupDownloadInterval === 'weekly') {
+          loadedPrefs.autoBackupDownloadInterval = 'disabled';
+          localStorage.setItem('teacherPreferences', JSON.stringify(loadedPrefs));
+        }
         setPreferences(loadedPrefs);
       } catch (e) {}
     } else {
@@ -197,7 +202,7 @@ export default function App() {
     }
 
     // Browser JSON Auto-download backup logic (periodic)
-    const interval = loadedPrefs.autoBackupDownloadInterval || 'weekly';
+    const interval = loadedPrefs.autoBackupDownloadInterval || 'disabled';
     if (interval !== 'disabled') {
       let shouldDownload = false;
       const lastDownloadDateStr = loadedPrefs.lastAutoBackupDownloadDate;
