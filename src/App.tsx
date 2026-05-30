@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Student, Appointment, TeacherPreferences } from './types';
+import { Student, Appointment, TeacherPreferences, ExamAppointment } from './types';
 import LockScreen from './components/LockScreen';
 import StudentList from './components/StudentList';
 import StudentDetails from './components/StudentDetails';
@@ -115,6 +115,7 @@ export default function App() {
   const [preferences, setPreferences] = useState<TeacherPreferences>(DEFAULT_PREFERENCES);
   const [students, setStudents] = useState<Student[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [examAppointments, setExamAppointments] = useState<ExamAppointment[]>([]);
   
   // App view control
   const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings'>('dashboard');
@@ -161,107 +162,36 @@ export default function App() {
     if (storedAppointments) {
       try {
         loadedAppointments = JSON.parse(storedAppointments);
-        setAppointments(loadedAppointments);
       } catch (e) {}
     } else {
-      setAppointments(DEFAULT_APPOINTMENTS);
       localStorage.setItem('teacherAppointments', JSON.stringify(DEFAULT_APPOINTMENTS));
     }
 
-    // Daily Auto-save backup logic
-    const today = new Date().toISOString().split('T')[0];
-    const lastAutoSaveDate = localStorage.getItem('teacherLastAutoSaveDate');
-    if (lastAutoSaveDate !== today) {
-      const backupData = {
-        students: loadedStudents,
-        appointments: loadedAppointments,
-        preferences: loadedPrefs,
-        savedAt: new Date().toISOString(),
-      };
-      
-      localStorage.setItem(`teacher_autosave_${today}`, JSON.stringify(backupData));
-      
-      const existingBackupsJson = localStorage.getItem('teacherAutoBackupsList') || '[]';
-      let list = [];
+    // Prune past exceptional appointments on load (الموعد الاستثنائي يتم حذفه بعد يومه)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const prunedAppointments = loadedAppointments.filter(app => {
+      if (app.isExceptional && app.date && app.date < todayStr) {
+        return false;
+      }
+      return true;
+    });
+
+    setAppointments(prunedAppointments);
+    if (prunedAppointments.length !== loadedAppointments.length) {
+      localStorage.setItem('teacherAppointments', JSON.stringify(prunedAppointments));
+    }
+
+    // Load Exam Appointments database
+    const storedExamApps = localStorage.getItem('teacherExamAppointments');
+    if (storedExamApps) {
       try {
-        list = JSON.parse(existingBackupsJson);
-      } catch(e) {}
-      
-      if (!list.includes(today)) {
-        list.push(today);
-        // Keep the last 10 days of backups to avoid over-bloating
-        while (list.length > 10) {
-          const removedDate = list.shift();
-          localStorage.removeItem(`teacher_autosave_${removedDate}`);
-        }
-        localStorage.setItem('teacherAutoBackupsList', JSON.stringify(list));
-      }
-      
-      localStorage.setItem('teacherLastAutoSaveDate', today);
-      console.log(`Auto-saved backup completed for today: ${today}`);
+        setExamAppointments(JSON.parse(storedExamApps));
+      } catch (e) {}
+    } else {
+      setExamAppointments([]);
+      localStorage.setItem('teacherExamAppointments', JSON.stringify([]));
     }
 
-    // Browser JSON Auto-download backup logic (periodic)
-    const interval = loadedPrefs.autoBackupDownloadInterval || 'disabled';
-    if (interval !== 'disabled') {
-      let shouldDownload = false;
-      const lastDownloadDateStr = loadedPrefs.lastAutoBackupDownloadDate;
-      
-      if (!lastDownloadDateStr) {
-        shouldDownload = true;
-      } else {
-        const lastDate = new Date(lastDownloadDateStr);
-        const currentDate = new Date(today);
-        const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        if (interval === 'daily' && diffDays >= 1) {
-          shouldDownload = true;
-        } else if (interval === 'weekly' && diffDays >= 7) {
-          shouldDownload = true;
-        } else if (interval === 'monthly' && diffDays >= 30) {
-          shouldDownload = true;
-        }
-      }
-
-      if (shouldDownload) {
-        setTimeout(() => {
-          try {
-            const backupData = {
-              version: '1.0.0',
-              exportedAt: new Date().toISOString(),
-              preferences: {
-                ...loadedPrefs,
-                lastAutoBackupDownloadDate: today,
-              },
-              students: loadedStudents,
-              appointments: loadedAppointments,
-            };
-
-            const str = JSON.stringify(backupData, null, 2);
-            const blob = new Blob([str], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `نسخة_تلقائية_TEACHER_${today}.json`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            // Update preferences
-            const updatedPrefs = {
-              ...loadedPrefs,
-              lastAutoBackupDownloadDate: today,
-            };
-            setPreferences(updatedPrefs);
-            localStorage.setItem('teacherPreferences', JSON.stringify(updatedPrefs));
-            console.log(`Auto backup JSON download completed for today: ${today}`);
-          } catch (err) {
-            console.error('Failed to trigger automatic backup JSON download', err);
-          }
-        }, 1500); // Small timeout to ensure optimal rendering
-      }
-    }
   }, []);
 
   // Sync is locked check
@@ -287,8 +217,15 @@ export default function App() {
   };
 
   const saveAppointments = (newAppointments: Appointment[]) => {
-    setAppointments(newAppointments);
-    localStorage.setItem('teacherAppointments', JSON.stringify(newAppointments));
+    const todayStr = new Date().toISOString().split('T')[0];
+    const pruned = newAppointments.filter(app => {
+      if (app.isExceptional && app.date && app.date < todayStr) {
+        return false;
+      }
+      return true;
+    });
+    setAppointments(pruned);
+    localStorage.setItem('teacherAppointments', JSON.stringify(pruned));
   };
 
   // Student CRUD actions
@@ -356,6 +293,30 @@ export default function App() {
     saveAppointments(nextApps);
   };
 
+  const handleUpdateAppointment = (id: string, updatedFields: Partial<Appointment>) => {
+    const nextApps = appointments.map(app => 
+      app.id === id ? { ...app, ...updatedFields } : app
+    );
+    saveAppointments(nextApps);
+  };
+
+  // Exam Appointment handlers
+  const handleAddExamAppointment = (examData: Omit<ExamAppointment, 'id'>) => {
+    const nextExam: ExamAppointment = {
+      ...examData,
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+    };
+    const updated = [...examAppointments, nextExam];
+    setExamAppointments(updated);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify(updated));
+  };
+
+  const handleDeleteExamAppointment = (id: string) => {
+    const updated = examAppointments.filter(app => app.id !== id);
+    setExamAppointments(updated);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify(updated));
+  };
+
   // Global Settings import / export
   const handleImportSystemBackup = (importedData: { students: Student[]; appointments: Appointment[]; preferences: TeacherPreferences }) => {
     saveStudents(importedData.students);
@@ -366,6 +327,8 @@ export default function App() {
   const handleClearAllSystemData = () => {
     saveStudents([]);
     saveAppointments([]);
+    setExamAppointments([]);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify([]));
     savePreferences({
       teacherName: 'الأستاذ الفاضل',
       subject: '',
@@ -694,6 +657,7 @@ export default function App() {
                   onBack={() => setSelectedStudentId(null)}
                   onUpdateStudent={handleUpdateStudent}
                   appointments={appointments}
+                  preferences={preferences}
                 />
               </motion.div>
             ) : (
@@ -736,9 +700,16 @@ export default function App() {
                   <Scheduler
                     students={students}
                     appointments={appointments}
+                    examAppointments={examAppointments}
                     onAddAppointment={handleAddAppointment}
                     onDeleteAppointment={handleDeleteAppointment}
+                    onAddExamAppointment={handleAddExamAppointment}
+                    onDeleteExamAppointment={handleDeleteExamAppointment}
                     onUpdateAppointmentDay={handleUpdateAppointmentDay}
+                    onUpdateAppointment={handleUpdateAppointment}
+                    onUpdateStudent={handleUpdateStudent}
+                    onSelectStudent={(id) => setSelectedStudentId(id)}
+                    preferences={preferences}
                   />
                 )}
 

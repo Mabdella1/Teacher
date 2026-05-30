@@ -290,16 +290,38 @@ export default function Dashboard({ students, appointments, preferences, onSelec
     const tomorrow: Appointment[] = [];
     const other: Appointment[] = [];
 
+    const getLocalYMDStr = (d: Date): string => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const todayStr = getLocalYMDStr(new Date());
+    const tomoDate = new Date();
+    tomoDate.setDate(tomoDate.getDate() + 1);
+    const tomorrowStr = getLocalYMDStr(tomoDate);
+
     appointments.forEach(app => {
       // Find corresponding student to ensure they are active
       const student = students.find(s => s.id === app.studentId);
       if (student && student.active) {
-        if (app.dayOfWeek === todayDayArabic) {
-          today.push(app);
-        } else if (app.dayOfWeek === tomorrowDayArabic) {
-          tomorrow.push(app);
+        if (app.isExceptional) {
+          if (app.date === todayStr) {
+            today.push(app);
+          } else if (app.date === tomorrowStr) {
+            tomorrow.push(app);
+          } else if (app.date && app.date > tomorrowStr) {
+            other.push(app);
+          }
         } else {
-          other.push(app);
+          if (app.dayOfWeek === todayDayArabic) {
+            today.push(app);
+          } else if (app.dayOfWeek === tomorrowDayArabic) {
+            tomorrow.push(app);
+          } else {
+            other.push(app);
+          }
         }
       }
     });

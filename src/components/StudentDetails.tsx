@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Student, Session, Payment, RewardTransaction, Appointment } from '../types';
+import { Student, Session, Payment, RewardTransaction, Appointment, TeacherPreferences } from '../types';
 import { 
   ArrowLeft, FileSpreadsheet, Plus, DollarSign, Clock, Notebook, 
   Trash2, Phone, Sparkles, CheckCircle, HelpCircle, CalendarCheck, CreditCard, 
@@ -18,9 +18,17 @@ interface StudentDetailsProps {
   onUpdateStudent: (id: string, updatedFields: Partial<Student>) => void;
   currency: string;
   appointments: Appointment[];
+  preferences?: TeacherPreferences;
 }
 
-export default function StudentDetails({ student, onBack, onUpdateStudent, currency, appointments }: StudentDetailsProps) {
+export default function StudentDetails({ 
+  student, 
+  onBack, 
+  onUpdateStudent, 
+  currency, 
+  appointments, 
+  preferences 
+}: StudentDetailsProps) {
   const studentAppointments = appointments?.filter(appt => appt.studentId === student.id) || [];
   const [activeTab, setActiveTab] = useState<'sessions' | 'payments' | 'rewards' | 'studyNotes' | 'whatsAppTemplates'>('sessions');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -1634,44 +1642,46 @@ export default function StudentDetails({ student, onBack, onUpdateStudent, curre
                 )}
 
                 {/* AI Attendance Analysis and Performance Adviser */}
-                <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-150 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex-1 space-y-1.5 text-right">
-                    <h4 className="text-xs font-black text-blue-950 flex items-center gap-1.5 justify-start">
-                      <Sparkles size={14} className="text-blue-600 animate-pulse" />
-                      <span>مركز التحليل والتشخيص الذكي (Gemini AI)</span>
-                    </h4>
+                {!preferences?.hideAIAnalysis && (
+                  <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-150 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex-1 space-y-1.5 text-right">
+                      <h4 className="text-xs font-black text-blue-950 flex items-center gap-1.5 justify-start">
+                        <Sparkles size={14} className="text-blue-600 animate-pulse" />
+                        <span>مركز التحليل والتشخيص الذكي (Gemini AI)</span>
+                      </h4>
+                      
+                      {isAnalyzing ? (
+                        <div className="flex items-center gap-2 text-slate-500 text-xs py-1">
+                          <Loader2 size={13} className="animate-spin text-blue-600" />
+                          <span>جاري قراءة سجلات الطالب وصياغة النصيحة التربوية...</span>
+                        </div>
+                      ) : aiError ? (
+                        <p className="text-[11px] text-red-650 font-semibold">{aiError}</p>
+                      ) : aiAdvice ? (
+                        <div className="p-3 bg-white border border-blue-100 rounded-xl text-xs text-slate-700 leading-relaxed font-bold shadow-2xs">
+                          {aiAdvice}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 font-semibold">
+                          احصل على نصيحة موجزة وذكية فورياً وصمم خطة لتأمين حضور {student.name} بناءً على سجلات حضوره السابقة والحالية.
+                        </p>
+                      )}
+                    </div>
                     
-                    {isAnalyzing ? (
-                      <div className="flex items-center gap-2 text-slate-500 text-xs py-1">
-                        <Loader2 size={13} className="animate-spin text-blue-600" />
-                        <span>جاري قراءة سجلات الطالب وصياغة النصيحة التربوية...</span>
-                      </div>
-                    ) : aiError ? (
-                      <p className="text-[11px] text-red-650 font-semibold">{aiError}</p>
-                    ) : aiAdvice ? (
-                      <div className="p-3 bg-white border border-blue-100 rounded-xl text-xs text-slate-700 leading-relaxed font-bold shadow-2xs">
-                        {aiAdvice}
-                      </div>
-                    ) : (
-                      <p className="text-[11px] text-slate-500 font-semibold">
-                        احصل على نصيحة موجزة وذكية فورياً وصمم خطة لتأمين حضور {student.name} بناءً على سجلات حضوره السابقة والحالية.
-                      </p>
-                    )}
+                    <button
+                      onClick={handleAnalyzeStudent}
+                      disabled={isAnalyzing}
+                      className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-black text-xs rounded-xl shadow-md transition-all duration-150 transform hover:scale-102 active:scale-97 cursor-pointer"
+                    >
+                      {isAnalyzing ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={13} />
+                      )}
+                      <span>تحليل سجل الحضور بالذكاء الاصطناعي</span>
+                    </button>
                   </div>
-                  
-                  <button
-                    onClick={handleAnalyzeStudent}
-                    disabled={isAnalyzing}
-                    className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-black text-xs rounded-xl shadow-md transition-all duration-150 transform hover:scale-102 active:scale-97 cursor-pointer"
-                  >
-                    {isAnalyzing ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Sparkles size={13} />
-                    )}
-                    <span>تحليل سجل الحضور بالذكاء الاصطناعي</span>
-                  </button>
-                </div>
+                )}
 
                 {/* Monthly Attendance Chart */}
                 {student.sessions && student.sessions.length > 0 && (

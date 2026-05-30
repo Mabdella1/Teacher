@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Student, StudentType, Appointment } from '../types';
-import { UserPlus, Search, Phone, CalendarRange, Layers, GraduationCap, X, Trash2, AlertTriangle, Camera, User, Bell, MessageCircle, QrCode } from 'lucide-react';
+import { UserPlus, Search, Phone, CalendarRange, Layers, GraduationCap, X, Trash2, AlertTriangle, Camera, User, Bell, MessageCircle, QrCode, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsQR from 'jsqr';
 import { formatTimeTo12h } from '../lib/timeUtils';
@@ -146,6 +146,17 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
   const [dueDate, setDueDate] = useState('');
   const [photo, setPhoto] = useState('');
   const [autoReminder, setAutoReminder] = useState(false);
+
+  // States for student editing
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editType, setEditType] = useState<StudentType>('lesson');
+  const [editActive, setEditActive] = useState(true);
+  const [editLessonRate, setEditLessonRate] = useState('100');
+  const [editCoursePrice, setEditCoursePrice] = useState('800');
+  const [editPhoto, setEditPhoto] = useState<string | undefined>(undefined);
+  const [editAutoReminder, setEditAutoReminder] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
@@ -216,6 +227,29 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
           if (rCtx) {
             rCtx.drawImage(img, 0, 0, 160, 160);
             setPhoto(resizeCanvas.toDataURL('image/jpeg', 0.8));
+          }
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        const img = new Image();
+        img.src = base64;
+        img.onload = () => {
+          const resizeCanvas = document.createElement('canvas');
+          resizeCanvas.width = 160;
+          resizeCanvas.height = 160;
+          const rCtx = resizeCanvas.getContext('2d');
+          if (rCtx) {
+            rCtx.drawImage(img, 0, 0, 160, 160);
+            setEditPhoto(resizeCanvas.toDataURL('image/jpeg', 0.8));
           }
         };
       };
@@ -639,6 +673,25 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                           <MessageCircle size={15} className="opacity-30" />
                         </span>
                       )}
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingStudent(student);
+                          setEditName(student.name);
+                          setEditPhone(student.phone || '');
+                          setEditType(student.type);
+                          setEditActive(student.active);
+                          setEditLessonRate(student.lessonRate ? student.lessonRate.toString() : '100');
+                          setEditCoursePrice(student.coursePrice ? student.coursePrice.toString() : '800');
+                          setEditPhoto(student.photo);
+                          setEditAutoReminder(student.autoReminder || false);
+                        }}
+                        className="text-slate-400 hover:text-blue-500 transition-colors cursor-pointer hover:scale-110 active:scale-95 mx-1"
+                        title="تعديل بيانات الطالب"
+                      >
+                        <Edit size={14} />
+                      </button>
 
                       <button
                         onClick={(e) => {
@@ -1262,6 +1315,260 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                     className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
                   >
                     تسجيل الطالب
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Student Slide-over Modal */}
+      <AnimatePresence>
+        {editingStudent && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setEditingStudent(null)}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            />
+
+            {/* Content Card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md max-h-[75vh] md:max-h-[80vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl z-10 font-sans text-right text-slate-800 scrollbar-thin animate-in fade-in zoom-in duration-200"
+            >
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
+                  <Edit size={20} className="text-blue-600" />
+                  تعديل بيانات الطالب
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingStudent(null)}
+                  className="p-1 text-slate-500 hover:text-slate-800 bg-slate-100 rounded-lg hover:bg-slate-200 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!editName.trim()) return;
+                  if (onUpdateStudent && editingStudent) {
+                    onUpdateStudent(editingStudent.id, {
+                      name: editName.trim(),
+                      phone: editPhone.trim(),
+                      type: editType,
+                      active: editActive,
+                      lessonRate: editType === 'lesson' ? parseFloat(editLessonRate) || 0 : undefined,
+                      coursePrice: editType === 'course' ? parseFloat(editCoursePrice) || 0 : undefined,
+                      photo: editPhoto,
+                      autoReminder: editAutoReminder,
+                    });
+                  }
+                  setEditingStudent(null);
+                }}
+                className="space-y-4"
+              >
+                {/* Basic Fields */}
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-650 font-bold block">اسم الطالب الثنائي/الكامل *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="مثال: أحمد محمد علي"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-650 font-bold block">رقم الهاتف (واتساب/اتصال)</label>
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="مثال: 01012345678"
+                    className="w-full px-4 py-2.5 text-left font-mono bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200"
+                    dir="ltr"
+                  />
+                </div>
+
+                {/* Status Switch (Active / Passive) */}
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-650 font-bold block">حالة الطالب بالمنصة *</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 border border-slate-200 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setEditActive(true)}
+                      className={`py-2 w-full text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        editActive
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      طالب نشط
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditActive(false)}
+                      className={`py-2 w-full text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        !editActive
+                          ? 'bg-rose-600 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-rose-800'
+                      }`}
+                    >
+                      طالب متوقف
+                    </button>
+                  </div>
+                </div>
+
+                {/* System Selection Button Group */}
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-650 font-bold block">نظام التعلم والمحاسبة *</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 border border-slate-200 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setEditType('lesson')}
+                      className={`py-2 w-full text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        editType === 'lesson'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      نظام الحصص (دفع لكل حصة)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditType('course')}
+                      className={`py-2 w-full text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                        editType === 'course'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      نظام كورس كامل (مسدد مقدماً)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Type Specific Fields */}
+                <AnimatePresence mode="wait">
+                  {editType === 'lesson' ? (
+                    <motion.div
+                      key="edit-lesson-fields"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-4 overflow-hidden"
+                    >
+                      <div className="space-y-1">
+                        <label className="text-xs text-slate-650 font-bold block">ثمن حصة الطالب الفردية ({currency}) *</label>
+                        <input
+                          type="number"
+                          required
+                          value={editLessonRate}
+                          onChange={(e) => setEditLessonRate(e.target.value)}
+                          min="0"
+                          placeholder="مثال: 150"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200"
+                        />
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="edit-course-fields"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="space-y-4 overflow-hidden"
+                    >
+                      <div className="space-y-1 font-sans">
+                        <label className="text-xs text-slate-655 font-bold block">مجموع تكلفة الكورس ({currency}) *</label>
+                        <input
+                          type="number"
+                          required
+                          value={editCoursePrice}
+                          onChange={(e) => setEditCoursePrice(e.target.value)}
+                          min="0"
+                          placeholder="مثال: 1000"
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all duration-200"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Photo upload option */}
+                <div className="space-y-1 bg-slate-50 border border-slate-150 p-3 rounded-2xl">
+                  <label className="text-xs text-slate-650 font-bold block mb-1">صورة الطالب (اختياري)</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      id="edit-student-file-input"
+                      accept="image/*"
+                      onChange={handleEditFileChange}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="edit-student-file-input"
+                      className="px-3.5 py-1.5 bg-white border border-slate-200 hover:border-blue-500 text-slate-700 hover:text-blue-600 text-xs font-bold rounded-xl shadow-3xs cursor-pointer flex items-center gap-1.5 transition-all"
+                    >
+                      <Camera size={13} />
+                      تغيير الصورة
+                    </label>
+                    {editPhoto && (
+                      <div className="relative">
+                        <img src={editPhoto} className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
+                        <button
+                          type="button"
+                          onClick={() => setEditPhoto(undefined)}
+                          className="absolute -top-1.5 -right-1.5 bg-slate-100 border border-slate-200 hover:bg-red-50 hover:text-red-600 rounded-full p-0.5 text-slate-500"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Auto Reminder Option */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between p-3 bg-blue-50/40 rounded-2xl border border-blue-100/50">
+                  <div className="flex items-center gap-2.5 font-sans">
+                    <input
+                      id="edit-student-auto-reminder"
+                      type="checkbox"
+                      checked={editAutoReminder}
+                      onChange={(e) => setEditAutoReminder(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                    />
+                    <label htmlFor="edit-student-auto-reminder" className="text-xs text-slate-705 font-bold cursor-pointer select-none">
+                      تفعيل التذكير التلقائي (قبل الحصة بـ 24 ساعة) 🔔
+                    </label>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditingStudent(null)}
+                    className="px-5 py-2.5 text-xs font-bold text-slate-650 bg-slate-150 rounded-xl cursor-pointer"
+                  >
+                    إلغاء الأمر
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                  >
+                    حفظ التعديلات
                   </button>
                 </div>
               </form>

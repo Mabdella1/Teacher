@@ -70,6 +70,9 @@ export interface Appointment {
   time: string; // HH:MM
   title?: string;
   notes?: string;
+  color?: string; // custom hex color tag
+  isExceptional?: boolean; // is it an exceptional one-off appointment
+  date?: string; // YYYY-MM-DD for exceptional appointments
 }
 
 export interface TeacherPreferences {
@@ -81,6 +84,8 @@ export interface TeacherPreferences {
   enableWhatsApp24hReminders?: boolean; // toggle for automated 24h WhatsApp session ready reminder
   autoBackupDownloadInterval?: 'daily' | 'weekly' | 'monthly' | 'disabled'; // auto backup download frequency
   lastAutoBackupDownloadDate?: string; // YYYY-MM-DD date when the last download took place
+  hideAIAnalysis?: boolean; // toggle to hide Gemini AI feature from the UI
+  hideGoogleCalendar?: boolean; // toggle to hide Google Calendar feature from the UI
 }
 
 export interface MonthlyReportItem {
@@ -118,5 +123,15 @@ export interface AppNotification {
   date: string; // ISO or human format
   read: boolean;
   dynamicActionData?: any; // e.g. target phone, whatsapp link
+}
+
+export interface ExamAppointment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  notes?: string;
+  subject?: string;
 }
 

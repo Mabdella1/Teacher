@@ -27,6 +27,8 @@ export default function SettingsPanel({
   const [currency, setCurrency] = useState(preferences.currency);
   const [primaryColor, setPrimaryColor] = useState(preferences.primaryColor || 'blue');
   const [enableWhatsApp24h, setEnableWhatsApp24h] = useState(preferences.enableWhatsApp24hReminders !== false);
+  const [hideAIAnalysis, setHideAIAnalysis] = useState(preferences.hideAIAnalysis === true);
+  const [hideGoogleCalendar, setHideGoogleCalendar] = useState(preferences.hideGoogleCalendar === true);
   const [newPasscode, setNewPasscode] = useState('');
   const [isUpdatingPasscode, setIsUpdatingPasscode] = useState(false);
   
@@ -49,6 +51,8 @@ export default function SettingsPanel({
       currency: currency.trim(),
       primaryColor: primaryColor,
       enableWhatsApp24hReminders: enableWhatsApp24h,
+      hideAIAnalysis: hideAIAnalysis,
+      hideGoogleCalendar: hideGoogleCalendar,
     });
     triggerSuccess('تم حفظ الإعدادات التفضيلية واللون الأساسي بنجاح!');
   };
@@ -282,6 +286,88 @@ export default function SettingsPanel({
               </div>
             </div>
 
+            {/* خيارات الخصوصية والربط البرمجي (APIs & Security) */}
+            <div className="pt-3.5 border-t border-slate-100/70 space-y-3">
+              <label className="text-xs text-slate-655 font-black block flex items-center gap-1.5 text-right">
+                <span>🔒</span>
+                إخفاء الربط البرمجي وميزات الذكاء الاصطناعي (APIs & Security)
+              </label>
+              
+              <div className="space-y-2">
+                {/* 1. Hide Gemini AI */}
+                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-right">
+                  <div className="space-y-0.5 pl-3 min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-850 flex items-center gap-1 justify-start">
+                      <span>✨</span>
+                      إخفاء ميزة تشخيص وتحليل الطلاب بالذكاء الاصطناعي (Gemini AI)
+                    </span>
+                    <p className="text-[10px] text-slate-500 leading-snug">عند التفعيل، سيتم إخفاء قسم تحليل سجل الحضور بـ Gemini AI تماماً عن الواجهة لضمان عدم لفت انتباه الطلاب أو الآخرين.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextVal = !hideAIAnalysis;
+                      setHideAIAnalysis(nextVal);
+                      onUpdatePreferences({ hideAIAnalysis: nextVal });
+                    }}
+                    className="shrink-0 transition-transform active:scale-95 cursor-pointer ml-1 text-right duration-150"
+                  >
+                    {hideAIAnalysis ? (
+                      <span className="text-indigo-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* 2. Hide Google Calendar */}
+                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-right">
+                  <div className="space-y-0.5 pl-3 min-w-0 flex-1">
+                    <span className="text-xs font-bold text-slate-850 flex items-center gap-1 justify-start">
+                      <span>📅</span>
+                      إخفاء ربط ومزامنة تقويم جوجل (Google Calendar API)
+                    </span>
+                    <p className="text-[10px] text-slate-500 leading-snug">تفعيل هذا الخيار يخفي لوحة مزامنة المواعيد مع تقويم جوجل لتسهيل مظهر واجهة المجدول والحد من الروابط البرمجية الخارجية.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextVal = !hideGoogleCalendar;
+                      setHideGoogleCalendar(nextVal);
+                      onUpdatePreferences({ hideGoogleCalendar: nextVal });
+                    }}
+                    className="shrink-0 transition-transform active:scale-95 cursor-pointer ml-1 text-right duration-150"
+                  >
+                    {hideGoogleCalendar ? (
+                      <span className="text-indigo-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* اللون الأساسي للتطبيق */}
             <div className="space-y-2 pt-3 border-t border-slate-100">
               <label className="text-xs text-slate-655 font-black block flex items-center gap-1.5">
@@ -392,98 +478,21 @@ export default function SettingsPanel({
             />
           </div>
 
-          {/* Automatic JSON Backup Download settings */}
+          {/* Manual & Cloud Backup Status Notice */}
           <div className="pt-4 border-t border-slate-100 space-y-3">
             <h4 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5 justify-start">
               <span className="text-blue-600">📥</span>
-              <span>تنزيل نسخة احتياطية للمتصفح تلقائياً (Browser Auto-download)</span>
+              <span>نظام النسخ الاحتياطي والتحميل</span>
             </h4>
             
-            <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
-              لتفادي فقد السجلات والبيانات عند تهيئة الهاتف أو مسح تاريخ التصفح بالخطأ، يمكن للنظام تنزيل ملف نسخة احتياطية كاملة بصيغة JSON تلقائياً في جهازك دورياً.
-            </p>
-
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { id: 'daily', name: 'يومياً' },
-                { id: 'weekly', name: 'أسبوعياً' },
-                { id: 'monthly', name: 'شهرياً' },
-                { id: 'disabled', name: 'معطل' },
-              ].map((opt) => {
-                const isSelected = (preferences.autoBackupDownloadInterval || 'disabled') === opt.id;
-                return (
-                  <button
-                    type="button"
-                    key={opt.id}
-                    onClick={() => {
-                      onUpdatePreferences({ autoBackupDownloadInterval: opt.id as any });
-                      triggerSuccess('تم تعديل جدولة التنزيل التلقائي الاحتياطي بنجاح!');
-                    }}
-                    className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    {opt.name}
-                  </button>
-                );
-              })}
-            </div>
-
-            {preferences.lastAutoBackupDownloadDate && (
-              <p className="text-[9px] text-blue-600 font-bold mt-1">
-                📅 تاريخ آخر تحميل تلقائي ناجح لملف النسخة الاحتياطية في متصفحك: <span className="font-mono">{preferences.lastAutoBackupDownloadDate}</span>
+            <div className="p-3.5 bg-amber-50/50 border border-amber-150 rounded-2xl space-y-1">
+              <p className="text-xs font-black text-amber-800 flex items-center gap-1.5 justify-start">
+                <span>🔒 نظام الحفظ الاحتياطي: يدوي وسحابي فقط</span>
               </p>
-            )}
-          </div>
-
-          {/* Daily Local Auto-Save Section */}
-          <div className="pt-4 border-t border-slate-100 space-y-3">
-            <h4 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5 justify-start">
-              <span className="text-emerald-600">📅</span>
-              <span>النسخ الاحتياطي التلقائي اليومي (Daily Auto-save)</span>
-            </h4>
-            
-            <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
-              يقوم التطبيق آلياً بحفظ نسخة احتياطية محلية متكاملة لبيانات طلابك وحصصك في مطلع كل يوم عند فتح التطبيق لحمايتها من الفقدان. يمكنك دائمًا استرداد البيانات من إحدى الأيام السابقة أدناه:
-            </p>
-
-            {(() => {
-              const autoBackupsJson = localStorage.getItem('teacherAutoBackupsList') || '[]';
-              let autoBackupsList: string[] = [];
-              try {
-                autoBackupsList = JSON.parse(autoBackupsJson);
-              } catch(e) {}
-              const sortedBackups = [...autoBackupsList].reverse();
-
-              if (sortedBackups.length === 0) {
-                return (
-                  <div className="text-center py-4 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
-                    لا توجد نسخ احتياطية تلقائية مسجلة بعد. يتم إنشاء أول نسخة تلقائية غداً عند فتح التطبيق.
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {sortedBackups.map((dateStr) => (
-                    <div key={dateStr} className="flex justify-between items-center p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100 transition duration-150 text-right">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-slate-800 font-mono" dir="ltr">{dateStr}</span>
-                        <span className="text-[9px] text-slate-400 font-sans">نسخة احتياطية تلقائية يومية</span>
-                      </div>
-                      <button
-                        onClick={() => handleRestoreAutoSave(dateStr)}
-                        className="px-3 py-1.5 bg-blue-50 border border-blue-100 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition cursor-pointer active:scale-95 shadow-3xs"
-                      >
-                        استرجاع البيانات ↺
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
+              <p className="text-[10px] text-amber-700 leading-relaxed font-semibold">
+                تم إلغاء التنزيل والنسخ التلقائي تماماً لضمان الخصوصية والتحكم الكامل في سعة جهازك. النسخ الاحتياطي الآن يتم يدوياً عبر تحميل نسخة احتياطية (.JSON) أو سحابياً من خلال الزر أعلاه.
+              </p>
+            </div>
           </div>
         </div>
 

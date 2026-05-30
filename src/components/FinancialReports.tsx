@@ -799,8 +799,8 @@ export default function FinancialReports({ students, currency }: FinancialReport
         </div>
       </div>
 
-      {/* Hidden PDF Monthly Comprehensive Report Template used to generate high-DPI PDF */}
-      <div className="absolute top-0 left-0 pointer-events-none opacity-0 select-none overflow-hidden" style={{ width: '850px', height: 'auto', zIndex: -100 }}>
+      {/* Offscreen PDF Monthly Comprehensive Report Template used to generate high-DPI PDF directly (المحمل المباشر) */}
+      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '850px', height: 'auto', zIndex: -9999 }}>
         <div id="comprehensive-monthly-report-pdf" className="bg-white p-10 font-sans text-right relative text-slate-850" dir="rtl" style={{ width: '850px' }}>
           
           {/* Header */}
