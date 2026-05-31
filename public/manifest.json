@@ -4,15 +4,15 @@
   "description": "منصة تنظيم وإدارة حسابات المعلم وتتبع الطلاب والحصص والأنصبة والمدفوعات والمستحقات المالية",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2228/2228741.png",
+      "src": "/app_icon.png",
       "type": "image/png",
-      "sizes": "192x192",
+      "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2228/2228741.png",
+      "src": "/app_icon.png",
       "type": "image/png",
-      "sizes": "512x512",
+      "sizes": "192x192",
       "purpose": "any maskable"
     }
   ],
