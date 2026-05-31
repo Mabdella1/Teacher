@@ -11,9 +11,12 @@ import ThemeStyleInjector from './components/ThemeStyleInjector';
 import Dashboard from './components/Dashboard';
 import { 
   Users, CalendarDays, BarChart3, Settings, LogOut, Lock, Award, 
-  Menu, X, Sparkles, GraduationCap, ChevronDown, User, LayoutGrid
+  Menu, X, Sparkles, GraduationCap, ChevronDown, User, LayoutGrid,
+  Cloud, CloudLightning, CloudOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { initAuth, logout } from './lib/firebaseAuth';
+import { saveWorkspaceToCloud, fetchWorkspaceFromCloud } from './lib/firebaseSync';
 
 // Default initial state
 const DEFAULT_PREFERENCES: TeacherPreferences = {
@@ -124,26 +127,120 @@ export default function App() {
   const [isLocked, setIsLocked] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Initial load
+  // Cloud Sync States
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error'>('synced');
+
+  // Push updates helper
+  const pushWorkspaceToCloud = async (
+    userId: string,
+    nextPrefs: TeacherPreferences,
+    nextStudents: Student[],
+    nextApps: Appointment[],
+    nextExams: ExamAppointment[]
+  ) => {
+    try {
+      setSyncState('syncing');
+      await saveWorkspaceToCloud(userId, {
+        teacherName: nextPrefs.teacherName,
+        subject: nextPrefs.subject,
+        currency: nextPrefs.currency || 'ج.م',
+        passcode: nextPrefs.passcode || '',
+        primaryColor: nextPrefs.primaryColor || 'indigo',
+        enableWhatsApp24hReminders: nextPrefs.enableWhatsApp24hReminders !== false,
+        autoBackupDownloadInterval: nextPrefs.autoBackupDownloadInterval || 'disabled',
+        students: nextStudents,
+        appointments: nextApps,
+        examAppointments: nextExams,
+      });
+      setSyncState('synced');
+    } catch (err: any) {
+      if (err?.isOffline) {
+        console.warn("Auto Sync Push to Cloud paused (Client is offline). State remains intact locally and will sync once connection is restored.");
+      } else {
+        console.error("Auto Sync Push to Cloud Failed:", err);
+      }
+      setSyncState('error');
+    }
+  };
+
+  // Auth Listener setup
   useEffect(() => {
-    // Load Teacher Options Preferences
+    const unsubscribe = initAuth((user) => {
+      setCurrentUserId(user.uid);
+      setIsLocked(false);
+    }, () => {
+      setCurrentUserId(null);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch Cloud workspace on login
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    let isSubscribed = true;
+
+    const pullCloudWorkspace = async () => {
+      try {
+        setSyncState('syncing');
+        const cloudData = await fetchWorkspaceFromCloud(currentUserId);
+        if (cloudData && isSubscribed) {
+          setStudents(cloudData.students || []);
+          localStorage.setItem('teacherStudents', JSON.stringify(cloudData.students || []));
+
+          setAppointments(cloudData.appointments || []);
+          localStorage.setItem('teacherAppointments', JSON.stringify(cloudData.appointments || []));
+
+          setExamAppointments(cloudData.examAppointments || []);
+          localStorage.setItem('teacherExamAppointments', JSON.stringify(cloudData.examAppointments || []));
+
+          const cloudPrefs: TeacherPreferences = {
+            teacherName: cloudData.teacherName,
+            subject: cloudData.subject,
+            currency: cloudData.currency || 'ج.م',
+            passcode: cloudData.passcode || '',
+            primaryColor: cloudData.primaryColor || 'indigo',
+            enableWhatsApp24hReminders: cloudData.enableWhatsApp24hReminders !== false,
+            autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'disabled'
+          };
+          setPreferences(cloudPrefs);
+          localStorage.setItem('teacherPreferences', JSON.stringify(cloudPrefs));
+          setSyncState('synced');
+        } else if (!cloudData && isSubscribed) {
+          // Newly registered - push default or pre-auth local data as initial cloud document
+          await pushWorkspaceToCloud(currentUserId, preferences, students, appointments, examAppointments);
+        }
+      } catch (err: any) {
+        if (err?.isOffline) {
+          console.warn("Could not fetch cloud workspace because client is offline. Running securely in offline mode with cached local data.");
+        } else {
+          console.error("Failed to fetch cloud workspace on login:", err);
+        }
+        setSyncState('error');
+      }
+    };
+
+    pullCloudWorkspace();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [currentUserId]);
+
+  // Initial local state load
+  useEffect(() => {
     const storedPrefs = localStorage.getItem('teacherPreferences');
     let loadedPrefs = DEFAULT_PREFERENCES;
     if (storedPrefs) {
       try {
         loadedPrefs = JSON.parse(storedPrefs);
-        // Force-disable auto backup download if it's currently set to 'weekly' (previous default)
-        if (loadedPrefs.autoBackupDownloadInterval === 'weekly') {
-          loadedPrefs.autoBackupDownloadInterval = 'disabled';
-          localStorage.setItem('teacherPreferences', JSON.stringify(loadedPrefs));
-        }
         setPreferences(loadedPrefs);
       } catch (e) {}
     } else {
       localStorage.setItem('teacherPreferences', JSON.stringify(DEFAULT_PREFERENCES));
     }
 
-    // Load Students database
     const storedStudents = localStorage.getItem('teacherStudents');
     let loadedStudents = DEFAULT_STUDENTS;
     if (storedStudents) {
@@ -156,7 +253,6 @@ export default function App() {
       localStorage.setItem('teacherStudents', JSON.stringify(DEFAULT_STUDENTS));
     }
 
-    // Load Appointments database
     const storedAppointments = localStorage.getItem('teacherAppointments');
     let loadedAppointments = DEFAULT_APPOINTMENTS;
     if (storedAppointments) {
@@ -167,7 +263,6 @@ export default function App() {
       localStorage.setItem('teacherAppointments', JSON.stringify(DEFAULT_APPOINTMENTS));
     }
 
-    // Prune past exceptional appointments on load (الموعد الاستثنائي يتم حذفه بعد يومه)
     const todayStr = new Date().toISOString().split('T')[0];
     const prunedAppointments = loadedAppointments.filter(app => {
       if (app.isExceptional && app.date && app.date < todayStr) {
@@ -181,7 +276,6 @@ export default function App() {
       localStorage.setItem('teacherAppointments', JSON.stringify(prunedAppointments));
     }
 
-    // Load Exam Appointments database
     const storedExamApps = localStorage.getItem('teacherExamAppointments');
     if (storedExamApps) {
       try {
@@ -191,29 +285,24 @@ export default function App() {
       setExamAppointments([]);
       localStorage.setItem('teacherExamAppointments', JSON.stringify([]));
     }
-
   }, []);
 
-  // Sync is locked check
-  useEffect(() => {
-    // If no lock setup yet (passcode as empty string), bypass locked screen immediately to establish set passcode!
-    if (preferences.passcode === '') {
-      setIsLocked(false);
-    } else {
-      setIsLocked(true);
-    }
-  }, [preferences.passcode]);
-
-  // Save utility wrappers
+  // Save wrappers
   const savePreferences = (updatedPrefs: Partial<TeacherPreferences>) => {
     const next = { ...preferences, ...updatedPrefs };
     setPreferences(next);
     localStorage.setItem('teacherPreferences', JSON.stringify(next));
+    if (currentUserId) {
+      pushWorkspaceToCloud(currentUserId, next, students, appointments, examAppointments);
+    }
   };
 
   const saveStudents = (newStudents: Student[]) => {
     setStudents(newStudents);
     localStorage.setItem('teacherStudents', JSON.stringify(newStudents));
+    if (currentUserId) {
+      pushWorkspaceToCloud(currentUserId, preferences, newStudents, appointments, examAppointments);
+    }
   };
 
   const saveAppointments = (newAppointments: Appointment[]) => {
@@ -226,7 +315,11 @@ export default function App() {
     });
     setAppointments(pruned);
     localStorage.setItem('teacherAppointments', JSON.stringify(pruned));
+    if (currentUserId) {
+      pushWorkspaceToCloud(currentUserId, preferences, students, pruned, examAppointments);
+    }
   };
+
 
   // Student CRUD actions
   const handleAddStudent = (studentData: Omit<Student, 'id' | 'createdAt' | 'sessions' | 'payments'>) => {
@@ -241,6 +334,83 @@ export default function App() {
   };
 
   const handleUpdateStudent = (id: string, updatedFields: Partial<Student>) => {
+    const targetStudent = students.find(s => s.id === id);
+    if (targetStudent) {
+      // Load teacher notification settings to respect permissions
+      const storedSettings = localStorage.getItem('teacherNotificationSettings');
+      let notifSettings = {
+        notifyTeacherOnSessionComplete: true,
+        notifyTeacherOnNewPayment: true,
+      };
+      if (storedSettings) {
+        try {
+          notifSettings = { ...notifSettings, ...JSON.parse(storedSettings) };
+        } catch (e) {}
+      }
+
+      // Check for completed session
+      if (
+        notifSettings.notifyTeacherOnSessionComplete !== false &&
+        updatedFields.sessions &&
+        updatedFields.sessions.length > targetStudent.sessions.length
+      ) {
+        const addedSession = updatedFields.sessions.find(s => !targetStudent.sessions.some(oldS => oldS.id === s.id))
+                           || updatedFields.sessions[0];
+        if (addedSession) {
+          const alertId = `t-sess-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          const newAlert = {
+            id: alertId,
+            type: 'teacher-session',
+            studentId: targetStudent.id,
+            studentName: targetStudent.name,
+            title: '🧑‍🏫 تم إنجاز حصة حضور للطالب',
+            message: `أتم الطالب "${targetStudent.name}" الحصة بنجاح في تاريخ ${addedSession.date} الساعة ${addedSession.time}.${addedSession.notes ? ` ملاحظات: ${addedSession.notes}` : ''}`,
+            date: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+            read: false,
+          };
+          const storedAlerts = localStorage.getItem('teacherActionAlerts');
+          let list = [];
+          if (storedAlerts) {
+            try { list = JSON.parse(storedAlerts); } catch(e){}
+          }
+          list = [newAlert, ...list].slice(0, 50);
+          localStorage.setItem('teacherActionAlerts', JSON.stringify(list));
+          window.dispatchEvent(new Event('teacherAlertsUpdated'));
+        }
+      }
+
+      // Check for new payment
+      if (
+        notifSettings.notifyTeacherOnNewPayment !== false &&
+        updatedFields.payments &&
+        updatedFields.payments.length > targetStudent.payments.length
+      ) {
+        const addedPayment = updatedFields.payments.find(p => !targetStudent.payments.some(oldP => oldP.id === p.id))
+                           || updatedFields.payments[0];
+        if (addedPayment) {
+          const alertId = `t-paym-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          const newAlert = {
+            id: alertId,
+            type: 'teacher-payment',
+            studentId: targetStudent.id,
+            studentName: targetStudent.name,
+            title: '💰 تم تسجيل دفعة مالية جديدة',
+            message: `تم قيد استلام دفعة نقدية جديدة من الطالب "${targetStudent.name}" بقيمة ${addedPayment.amount} ${preferences.currency || 'ج.م'} بتاريخ ${addedPayment.date}.${addedPayment.notes ? ` ملاحظات: ${addedPayment.notes}` : ''}`,
+            date: new Date().toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }),
+            read: false,
+          };
+          const storedAlerts = localStorage.getItem('teacherActionAlerts');
+          let list = [];
+          if (storedAlerts) {
+            try { list = JSON.parse(storedAlerts); } catch(e){}
+          }
+          list = [newAlert, ...list].slice(0, 50);
+          localStorage.setItem('teacherActionAlerts', JSON.stringify(list));
+          window.dispatchEvent(new Event('teacherAlertsUpdated'));
+        }
+      }
+    }
+
     const modified = students.map(student => {
       if (student.id === id) {
         // Automatically sync appointment names if student name changes
@@ -306,15 +476,57 @@ export default function App() {
       ...examData,
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
     };
-    const updated = [...examAppointments, nextExam];
-    setExamAppointments(updated);
-    localStorage.setItem('teacherExamAppointments', JSON.stringify(updated));
+    const updatedExams = [...examAppointments, nextExam];
+    setExamAppointments(updatedExams);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify(updatedExams));
+
+    const DAYS_AR_MAP: Record<number, string> = {
+      0: 'الأحد',
+      1: 'الإثنين',
+      2: 'الثلاثاء',
+      3: 'الأربعاء',
+      4: 'الخميس',
+      5: 'الجمعة',
+      6: 'السبت'
+    };
+    const getArabicDayFromDateStr = (dateStr: string): string => {
+      if (!dateStr) return 'السبت';
+      const dObj = new Date(`${dateStr}T12:00:00`);
+      const dayIndex = dObj.getDay();
+      return DAYS_AR_MAP[dayIndex] || 'السبت';
+    };
+
+    const nextExamApp: Appointment = {
+      id: `exam-${nextExam.id}`,
+      studentId: examData.studentId,
+      studentName: examData.studentName,
+      dayOfWeek: getArabicDayFromDateStr(examData.date),
+      time: examData.time,
+      notes: `📝 امتحان: ${examData.subject || 'عام'} ${examData.notes ? `• ${examData.notes}` : ''}`,
+      color: '#f97316',
+      isExceptional: true,
+      date: examData.date,
+    };
+
+    const updatedApps = [...appointments, nextExamApp];
+    saveAppointments(updatedApps);
+
+    if (currentUserId) {
+      pushWorkspaceToCloud(currentUserId, preferences, students, updatedApps, updatedExams);
+    }
   };
 
   const handleDeleteExamAppointment = (id: string) => {
-    const updated = examAppointments.filter(app => app.id !== id);
-    setExamAppointments(updated);
-    localStorage.setItem('teacherExamAppointments', JSON.stringify(updated));
+    const updatedExams = examAppointments.filter(app => app.id !== id);
+    setExamAppointments(updatedExams);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify(updatedExams));
+
+    const updatedApps = appointments.filter(app => app.id !== `exam-${id}`);
+    saveAppointments(updatedApps);
+
+    if (currentUserId) {
+      pushWorkspaceToCloud(currentUserId, preferences, students, updatedApps, updatedExams);
+    }
   };
 
   // Global Settings import / export
@@ -338,15 +550,19 @@ export default function App() {
   };
 
   // Locked check
-  if (isLocked && preferences.passcode !== '') {
+  if (isLocked) {
     return (
       <>
         <ThemeStyleInjector primaryColor={preferences.primaryColor} />
         <LockScreen
           storedPasscode={preferences.passcode}
           onUnlock={() => setIsLocked(false)}
-          onSetPasscode={(code) => {
-            savePreferences({ passcode: code });
+          onLogin={(account) => {
+            savePreferences({ 
+              teacherName: account.fullName,
+              subject: account.subject,
+              primaryColor: account.primaryColor || preferences.primaryColor
+            });
             setIsLocked(false);
           }}
         />
@@ -406,10 +622,50 @@ export default function App() {
 
 
 
+          {/* Cloud Sync Status Indicator */}
+          {currentUserId && (
+            <div 
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 ${
+                syncState === 'synced'
+                  ? 'bg-emerald-50 border-emerald-155 text-emerald-600'
+                  : syncState === 'syncing'
+                  ? 'bg-indigo-50 border-indigo-155 text-indigo-600 animate-pulse'
+                  : 'bg-rose-50 border-rose-155 text-rose-600 animate-bounce'
+              }`}
+              title={syncState === 'synced' ? 'تم المزامنة والحفظ سحابياً بنجاح' : syncState === 'syncing' ? 'جاري المزامنة...' : 'عطل مزامنة'}
+            >
+              <Cloud size={14} className={syncState === 'syncing' ? 'animate-bounce' : ''} />
+              <span className="hidden md:inline">
+                {syncState === 'synced' ? 'مزامنة سحابية نشطة' : syncState === 'syncing' ? 'جاري المزامنة...' : 'خطأ اتصال'}
+              </span>
+            </div>
+          )}
+
+          {/* Cloud Sign Out Button */}
+          {currentUserId && (
+            <button
+              onClick={async () => {
+                try {
+                  setSyncState('syncing');
+                  await logout();
+                  setCurrentUserId(null);
+                  setIsLocked(true);
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-650 hover:text-red-750 border border-red-200 hover:border-red-300 rounded-xl text-xs font-black transition-all cursor-pointer shadow-3xs active:scale-95 shrink-0"
+              title="تسجيل الخروج السحابي"
+            >
+              <LogOut size={13} className="text-red-550 rotate-180" />
+              <span className="hidden sm:inline">خروج سحابي</span>
+            </button>
+          )}
+
           {preferences.passcode && (
             <button
               onClick={() => setIsLocked(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 shrink-0"
               title="قفل الشاشة السريع"
             >
               <Lock size={13} className="text-slate-450" />
@@ -417,7 +673,7 @@ export default function App() {
             </button>
           )}
 
-          <div className="md:hidden flex items-center gap-1 text-[9px] font-bold px-2 py-1 bg-emerald-50 border border-emerald-150 text-emerald-700 rounded-lg">
+          <div className="md:hidden flex items-center gap-1 text-[9px] font-bold px-2 py-1 bg-emerald-50 border border-emerald-150 text-emerald-700 rounded-lg shrink-0">
             <span>مؤمنة</span>
           </div>
         </div>

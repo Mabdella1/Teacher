@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Student, StudentType, Appointment } from '../types';
-import { UserPlus, Search, Phone, CalendarRange, Layers, GraduationCap, X, Trash2, AlertTriangle, Camera, User, Bell, MessageCircle, QrCode, Edit } from 'lucide-react';
+import { UserPlus, Search, Phone, CalendarRange, Layers, GraduationCap, X, Trash2, AlertTriangle, Camera, User, Bell, MessageCircle, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import jsQR from 'jsqr';
 import { formatTimeTo12h } from '../lib/timeUtils';
 
 interface StudentListProps {
@@ -42,98 +41,6 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
         ? prev.filter(id => id !== studentId)
         : [...prev, studentId]
     );
-  };
-
-  // Student QR Scanner Camera States & Refs
-  const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
-  const [scannerError, setScannerError] = useState<string | null>(null);
-  const [scannedSuccessId, setScannedSuccessId] = useState<string | null>(null);
-  const qrVideoRef = React.useRef<HTMLVideoElement | null>(null);
-  const qrStreamRef = React.useRef<MediaStream | null>(null);
-  const animationFrameIdRef = React.useRef<number | null>(null);
-
-  const startQrScanner = async () => {
-    setScannerError(null);
-    setScannedSuccessId(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }
-      });
-      qrStreamRef.current = stream;
-      setIsQrScannerOpen(true);
-      
-      // Delay playing to ensure ref has mounted in DOM
-      setTimeout(() => {
-        if (qrVideoRef.current) {
-          qrVideoRef.current.srcObject = stream;
-          qrVideoRef.current.play().then(() => {
-            animationFrameIdRef.current = requestAnimationFrame(tickQrScanner);
-          }).catch(err => {
-            console.error("Error playing QR Video stream:", err);
-          });
-        }
-      }, 250);
-    } catch (err: any) {
-      console.error("Error accessing camera for QR:", err);
-      setScannerError("عذراً، لم نتمكن من الوصول لكاميرا المسح. يرجى التحقق من صلاحيات الكاميرا.");
-    }
-  };
-
-  const stopQrScanner = () => {
-    if (animationFrameIdRef.current) {
-      cancelAnimationFrame(animationFrameIdRef.current);
-      animationFrameIdRef.current = null;
-    }
-    if (qrStreamRef.current) {
-      qrStreamRef.current.getTracks().forEach(track => track.stop());
-      qrStreamRef.current = null;
-    }
-    setIsQrScannerOpen(false);
-  };
-
-  const tickQrScanner = () => {
-    if (!qrStreamRef.current) return; // Scanner was stopped
-    
-    if (!qrVideoRef.current) {
-      animationFrameIdRef.current = requestAnimationFrame(tickQrScanner);
-      return;
-    }
-
-    const video = qrVideoRef.current;
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const decoded = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert",
-        });
-
-        if (decoded && decoded.data) {
-          const qrText = decoded.data;
-          if (qrText.startsWith('student-qr:')) {
-            const studentId = qrText.split('student-qr:')[1]?.trim();
-            if (studentId) {
-              const matchedStudent = students.find(s => s.id === studentId);
-              if (matchedStudent) {
-                // Play notification if supported, set success highlight, then redirect
-                setScannedSuccessId(studentId);
-                setTimeout(() => {
-                  stopQrScanner();
-                  onSelectStudent(studentId);
-                }, 750);
-                return;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    animationFrameIdRef.current = requestAnimationFrame(tickQrScanner);
   };
 
   // New Student Form State
@@ -360,14 +267,6 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
               className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-450 focus:outline-none focus:border-indigo-500/85 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 transition-all duration-300 premium-input"
             />
           </div>
-          <button
-            onClick={startQrScanner}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-150 rounded-xl text-xs font-black cursor-pointer transition shadow-3xs active:scale-95 shrink-0"
-            title="مسح رمز تعريف الطالب QR لتسجيل حضور أو سحب الملف"
-          >
-            <Camera size={14} />
-            <span>مسح QR 📷</span>
-          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3.5 w-full xl:w-auto justify-end">
@@ -1740,90 +1639,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
         )}
       </AnimatePresence>
 
-      {/* Student QR Scanner Modal overlay */}
-      <AnimatePresence>
-        {isQrScannerOpen && (
-          <div className="fixed inset-0 bg-black/75 flex items-center justify-center p-4 z-100 font-sans cursor-default" dir="rtl">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-white rounded-3xl border border-slate-100/10 shadow-2xl relative w-full max-w-sm overflow-hidden text-right"
-            >
-              {/* Header */}
-              <div className="bg-indigo-600 p-4.5 text-white flex justify-between items-center relative">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-                    <QrCode size={18} className="text-indigo-10 position-relative animate-pulse" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black">ماسح رمز QR للطالب</h3>
-                    <p className="text-[9px] text-indigo-200 mt-0.5 leading-relaxed">وجّه الكاميرا نحو رمز الاستجابة السريعة للطالب</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={stopQrScanner}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer transition"
-                  title="إغلاق"
-                >
-                  <X size={15} />
-                </button>
-              </div>
 
-              {/* Camera Scanner Container */}
-              <div className="p-5 flex flex-col items-center">
-                {/* Viewfinder block */}
-                <div className="relative aspect-square w-full max-w-[240px] rounded-2xl bg-black overflow-hidden border-2 border-indigo-500 shadow-inner flex items-center justify-center">
-                  <video
-                    ref={qrVideoRef}
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-
-                  {/* Laser effect */}
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500 shadow-[0_0_10px_2px_rgba(239,68,68,0.7)] z-10 animate-bounce" />
-
-                  {/* Target sight brackets */}
-                  <div className="absolute top-3 right-3 w-5 h-5 border-t-4 border-r-4 border-white opacity-80 rounded-tr" />
-                  <div className="absolute top-3 left-3 w-5 h-5 border-t-4 border-l-4 border-white opacity-80 rounded-tl" />
-                  <div className="absolute bottom-3 right-3 w-5 h-5 border-b-4 border-r-4 border-white opacity-80 rounded-br" />
-                  <div className="absolute bottom-3 left-3 w-5 h-5 border-b-4 border-l-4 border-white opacity-80 rounded-bl" />
-
-                  {/* Scanned success state overlay */}
-                  {scannedSuccessId && (
-                    <div className="absolute inset-0 bg-indigo-950/95 flex flex-col items-center justify-center text-white p-4 text-center z-25 leading-relaxed">
-                      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-indigo-600 shadow-lg text-lg animate-bounce">
-                        ✔️
-                      </div>
-                      <p className="text-xs font-black mt-3">تم قراءة الرمز بنجاح!</p>
-                      <p className="text-[10px] text-indigo-200 mt-1">
-                        جاري فتح ملف: {students.find(s => s.id === scannedSuccessId)?.name}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Subtext description */}
-                {scannerError ? (
-                  <div className="mt-4 p-3 bg-red-50 border border-red-150 rounded-xl text-red-700 text-[10px] font-bold text-center leading-relaxed">
-                    ⚠️ {scannerError}
-                  </div>
-                ) : (
-                  <div className="mt-4 text-slate-500 text-[10px] font-semibold text-center leading-relaxed">
-                    سيقوم النظام بقراءة الرمز وتوجيهك لملف الطالب المالي والدراسي فوراً بشكل آمن.
-                  </div>
-                )}
-              </div>
-
-              {/* Bottom control info footer */}
-              <div className="bg-slate-550/10 p-3 flex justify-center border-t border-slate-100 font-bold text-[10px] text-slate-450">
-                🔒 يشفر رمز QR معلومات معرّف الطالب لحماية الخصوصية.
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

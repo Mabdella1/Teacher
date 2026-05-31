@@ -250,7 +250,10 @@ export default function FinancialReports({ students, currency }: FinancialReport
 
   const handlePrintPDF = async () => {
     const element = document.getElementById('comprehensive-monthly-report-pdf');
-    if (!element) return;
+    if (!element) {
+      console.error('Target element "comprehensive-monthly-report-pdf" not found');
+      return;
+    }
 
     setIsGeneratingPDF(true);
     try {
@@ -260,7 +263,10 @@ export default function FinancialReports({ students, currency }: FinancialReport
         scale: 2.2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 850
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -288,6 +294,7 @@ export default function FinancialReports({ students, currency }: FinancialReport
       pdf.save(`التقرير_المالي_والأداء_الشامل_شهر_${selectedMonth}_${selectedYear}.pdf`);
     } catch (err) {
       console.error('Failed to generate PDF:', err);
+      alert('حدث خطأ أثناء رصد وتحميل كشف الـ PDF. يرجى تجربة فتح التطبيق في علامة تبويب مستقلة وإعادة المحاولة.');
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -800,7 +807,7 @@ export default function FinancialReports({ students, currency }: FinancialReport
       </div>
 
       {/* Offscreen PDF Monthly Comprehensive Report Template used to generate high-DPI PDF directly (المحمل المباشر) */}
-      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '850px', height: 'auto', zIndex: -9999 }}>
+      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '850px', height: 'auto', opacity: 1, visibility: 'visible', zIndex: -100 }}>
         <div id="comprehensive-monthly-report-pdf" className="bg-white p-10 font-sans text-right relative text-slate-850" dir="rtl" style={{ width: '850px' }}>
           
           {/* Header */}

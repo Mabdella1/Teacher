@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "teachers": {
+      "title": "Teacher Profile & Workspaces",
+      "description": "Houses the complete cloud synchronized workspace data of a teacher, including students ledger, appointments roster, preference configurations, and calendar elements.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The exact Firebase safe User ID matching auth.uid"
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "The teacher's custom name"
+        },
+        "subject": {
+          "type": "string",
+          "description": "The educational subject of the classes"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Financial reports currency default"
+        },
+        "passcode": {
+          "type": "string",
+          "description": "Encrypted or clean lock passcode"
+        },
+        "primaryColor": {
+          "type": "string",
+          "description": "Theme primary visual shade marker"
+        },
+        "enableWhatsApp24hReminders": {
+          "type": "boolean",
+          "description": "automated whatsapp delivery switch"
+        },
+        "autoBackupDownloadInterval": {
+          "type": "string",
+          "description": "backup retention period configuration"
+        },
+        "students": {
+          "type": "array",
+          "description": "A list of students containing profiles, sessions, payments log, study notes, and Whatsapp structures"
+        },
+        "appointments": {
+          "type": "array",
+          "description": "Day-to-day classes schedule appointments block"
+        },
+        "examAppointments": {
+          "type": "array",
+          "description": "List of queued school exam dates for student cohorts"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating last database write"
+        }
+      },
+      "required": ["userId", "teacherName", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/teachers/{userId}": {
+      "schema": "teachers",
+      "description": "Container housing complete educational workspace records per registered authenticated account."
+    }
+  }
+}

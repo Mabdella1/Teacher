@@ -194,6 +194,150 @@ export const COLOR_PRESETS: ColorPreset[] = [
 ];
 
 export const getPresetColors = (id?: string): ColorPalette => {
+  if (id && id.startsWith('#')) {
+    return generatePaletteFromHex(id);
+  }
   const preset = COLOR_PRESETS.find(p => p.id === id);
   return preset ? preset.colors : COLOR_PRESETS[0].colors;
+};
+
+// Converts HEX to HSL
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  hex = hex.replace(/^#/, '');
+  if (hex.length === 3) {
+    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+// Converts HSL to HEX
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (0 <= h && h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (60 <= h && h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (120 <= h && h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (180 <= h && h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (240 <= h && h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else if (300 <= h && h < 360) {
+    r = c;
+    g = 0;
+    b = x;
+  }
+
+  const rStr = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+  const gStr = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+  const bStr = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+
+  return `#${rStr}${gStr}${bStr}`;
+}
+
+// Generates smooth CSS shaded palette from a single base custom hex color
+export const generatePaletteFromHex = (hex: string): ColorPalette => {
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+    if (/^#[0-9A-Fa-f]{3}$/.test(hex)) {
+      hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+    } else {
+      hex = '#2563eb';
+    }
+  }
+
+  const { h, s, l } = hexToHsl(hex);
+
+  const getLightnessForWeight = (weight: string): number => {
+    switch (weight) {
+      case '50': return 98;
+      case '100': return 95;
+      case '105': return 91;
+      case '150': return 87;
+      case '200': return 82;
+      case '300': return 72;
+      case '400': return 60;
+      case '500': return Math.min(l + 8, 92);
+      case '600': return l; // the base custom color is exactly the 600 main value
+      case '650': return l * 0.90;
+      case '700': return l * 0.82;
+      case '750': return l * 0.74;
+      case '800': return l * 0.65;
+      case '900': return l * 0.45;
+      case '950': return Math.max(l * 0.20, 8);
+      default: return l;
+    }
+  };
+
+  const getSaturationForWeight = (weight: string): number => {
+    switch (weight) {
+      case '50': return Math.min(s, 25);
+      case '100': return Math.min(s, 40);
+      case '950': return Math.min(s, 35);
+      default: return s;
+    }
+  };
+
+  return {
+    '50': hslToHex(h, getSaturationForWeight('50'), getLightnessForWeight('50')),
+    '100': hslToHex(h, getSaturationForWeight('100'), getLightnessForWeight('100')),
+    '105': hslToHex(h, getSaturationForWeight('105'), getLightnessForWeight('105')),
+    '150': hslToHex(h, getSaturationForWeight('150'), getLightnessForWeight('150')),
+    '200': hslToHex(h, getSaturationForWeight('200'), getLightnessForWeight('200')),
+    '300': hslToHex(h, getSaturationForWeight('300'), getLightnessForWeight('300')),
+    '400': hslToHex(h, getSaturationForWeight('400'), getLightnessForWeight('400')),
+    '500': hslToHex(h, getSaturationForWeight('500'), getLightnessForWeight('500')),
+    '600': hex,
+    '650': hslToHex(h, getSaturationForWeight('650'), getLightnessForWeight('650')),
+    '700': hslToHex(h, getSaturationForWeight('700'), getLightnessForWeight('700')),
+    '750': hslToHex(h, getSaturationForWeight('750'), getLightnessForWeight('750')),
+    '800': hslToHex(h, getSaturationForWeight('800'), getLightnessForWeight('800')),
+    '900': hslToHex(h, getSaturationForWeight('900'), getLightnessForWeight('900')),
+    '950': hslToHex(h, getSaturationForWeight('950'), getLightnessForWeight('950')),
+  };
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Student, Appointment, TeacherPreferences, ExamAppointment } from '../types';
-import { Calendar, Plus, Clock, Trash2, X, CalendarDays, ClipboardCheck, AlertTriangle, GripVertical, RefreshCw, LogOut, CalendarClock, Bell, BellRing, BookOpen } from 'lucide-react';
+import { Calendar, Plus, Clock, Trash2, X, CalendarDays, ClipboardCheck, AlertTriangle, GripVertical, RefreshCw, LogOut, CalendarClock, Bell, BellRing, BookOpen, Compass, Sun, Brain, Target, Award, Rocket, Coffee } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatTimeTo12h } from '../lib/timeUtils';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../lib/firebaseAuth';
@@ -32,6 +32,64 @@ const DAYS_OF_WEEK = [
   'الخميس',
   'الجمعة',
 ];
+
+const DAY_METADATA: Record<string, { 
+  icon: React.ComponentType<any>; 
+  title: string; 
+  description: string; 
+  badgeColor: string; 
+  iconColor: string; 
+}> = {
+  'السبت': {
+    icon: Compass,
+    title: 'السبت المُنطلق',
+    description: 'بداية الأسبوع وحماس متجدد',
+    badgeColor: 'bg-teal-50 text-teal-700 border-teal-100',
+    iconColor: 'text-teal-600'
+  },
+  'الأحد': {
+    icon: Sun,
+    title: 'الأحد المشرق',
+    description: 'يوم الجد والتأسيس والهمة',
+    badgeColor: 'bg-amber-50 text-amber-700 border-amber-100',
+    iconColor: 'text-amber-500'
+  },
+  'الاثنين': {
+    icon: Brain,
+    title: 'الاثنين الذهني',
+    description: 'تركيز عميق ومتابعة مستمرة',
+    badgeColor: 'bg-indigo-50 text-indigo-750 border-indigo-100',
+    iconColor: 'text-indigo-600'
+  },
+  'الثلاثاء': {
+    icon: Target,
+    title: 'الثلاثاء الموجه',
+    description: 'تحقيق الأهداف وتقييم الأداء',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-100',
+    iconColor: 'text-rose-500'
+  },
+  'الأربعاء': {
+    icon: Award,
+    title: 'الأربعاء الذهبي',
+    description: 'حصاد الأسبوع والتألق الفردي',
+    badgeColor: 'bg-blue-50 text-blue-700 border-blue-100',
+    iconColor: 'text-blue-600'
+  },
+  'الخميس': {
+    icon: Rocket,
+    title: 'الخميس المميز',
+    description: 'نهاية الأسبوع وانطلاقة التميز',
+    badgeColor: 'bg-orange-50 text-orange-700 border-orange-100',
+    iconColor: 'text-orange-600'
+  },
+  'الجمعة': {
+    icon: Coffee,
+    title: 'الجمعة الهادئ',
+    description: 'يوم الرصانة والاستبصار والراحة',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    iconColor: 'text-emerald-600'
+  }
+};
 
 export default function Scheduler({ 
   students, 
@@ -80,6 +138,69 @@ export default function Scheduler({
   const [rescheduleDay, setRescheduleDay] = useState('السبت');
   const [rescheduleNotes, setRescheduleNotes] = useState('');
   const [rescheduleDate, setRescheduleDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  // Conflict Checking and Duration Options
+  const [durationOption, setDurationOption] = useState<'1H' | '2H'>('1H');
+  const [conflictError, setConflictError] = useState<string | null>(null);
+  const [examConflictError, setExamConflictError] = useState<string | null>(null);
+  const [rescheduleConflictError, setRescheduleConflictError] = useState<string | null>(null);
+  const [selectedDayFilter, setSelectedDayFilter] = useState<string>('الكل');
+
+  const checkConflict = (
+    time: string,
+    dayName: string,
+    dateStr?: string,
+    ignoreAppId?: string
+  ): string | null => {
+    for (const app of appointments) {
+      if (ignoreAppId && app.id === ignoreAppId) continue;
+      
+      const isSameTime = app.time === time;
+      if (!isSameTime) continue;
+
+      if (app.isExceptional && dateStr && app.date === dateStr) {
+        return `مدرج بالفعل موعد استثنائي للطالب "${app.studentName}" في نفس هذا اليوم والتوقيت (${formatTimeTo12h(time)}).`;
+      }
+      
+      if (app.dayOfWeek === dayName) {
+        if (app.isExceptional && dateStr && app.date !== dateStr) {
+          continue;
+        }
+        return `يوجد موعد محجوز مسبقاً للطالب "${app.studentName}" يوم (${dayName}) الساعة (${formatTimeTo12h(time)}) بنفس التوقيت تماماً.`;
+      }
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (!selectedStudentId || !appointmentTime || !isOpenAddModal) {
+      setConflictError(null);
+      return;
+    }
+    const dayName = getArabicDayNameFromDate(selectedDate);
+    const err = checkConflict(appointmentTime, dayName, isExceptionalVal ? selectedDate : undefined);
+    setConflictError(err);
+  }, [selectedStudentId, appointmentTime, selectedDate, isExceptionalVal, isOpenAddModal]);
+
+  useEffect(() => {
+    if (!examStudentId || !examTime || !isOpenAddExamModal) {
+      setExamConflictError(null);
+      return;
+    }
+    const dayName = getArabicDayNameFromDate(examDate);
+    const err = checkConflict(examTime, dayName, examDate);
+    setExamConflictError(err);
+  }, [examStudentId, examTime, examDate, isOpenAddExamModal]);
+
+  useEffect(() => {
+    if (!rescheduleApp || !rescheduleTime) {
+      setRescheduleConflictError(null);
+      return;
+    }
+    const dayName = getArabicDayNameFromDate(rescheduleDate);
+    const err = checkConflict(rescheduleTime, dayName, rescheduleDate, rescheduleApp.id);
+    setRescheduleConflictError(err);
+  }, [rescheduleApp, rescheduleTime, rescheduleDate]);
 
   // Custom reminder states
   const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
@@ -253,17 +374,25 @@ export default function Scheduler({
     e.preventDefault();
     if (!selectedStudentId) return;
 
+    if (conflictError) {
+      return;
+    }
+
     const matchedStudent = students.find(s => s.id === selectedStudentId);
     if (!matchedStudent) return;
 
     const dayName = getArabicDayNameFromDate(selectedDate);
+    const durationSuffix = durationOption === '2H' ? '(مدة ساعتين)' : '';
+    const finalNotes = durationSuffix 
+      ? (notes.trim() ? `${durationSuffix} • ${notes.trim()}` : durationSuffix)
+      : notes.trim();
 
     onAddAppointment({
       studentId: selectedStudentId,
       studentName: matchedStudent.name,
       dayOfWeek: dayName,
       time: appointmentTime,
-      notes: notes.trim(),
+      notes: finalNotes,
       isExceptional: isExceptionalVal,
       date: selectedDate,
     });
@@ -272,12 +401,17 @@ export default function Scheduler({
     setSelectedStudentId('');
     setNotes('');
     setIsExceptionalVal(true);
+    setDurationOption('1H');
     setIsOpenAddModal(false);
   };
 
   const handleRescheduleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!rescheduleApp) return;
+
+    if (rescheduleConflictError) {
+      return;
+    }
 
     const finalDay = getArabicDayNameFromDate(rescheduleDate);
 
@@ -404,153 +538,106 @@ export default function Scheduler({
 
       {activeSubTab === 'board' && (
         <>
-          {/* Google Calendar Sync Dashboard Card */}
-          {!preferences?.hideGoogleCalendar && (
-            <div className="bg-gradient-to-r from-blue-50/50 to-indigo-50/30 border border-blue-100 rounded-3xl p-5 shadow-sm">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                    <Calendar size={18} className="animate-pulse text-indigo-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                      مزامنة مواعيد الحصص مع Google Calendar
-                      {googleUser && (
-                        <span className="text-[10px] bg-emerald-50 border border-emerald-150 text-emerald-700 px-2 py-0.5 rounded-full font-extrabold">
-                          🟢 متصل ومستعد
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed font-semibold">
-                      {googleUser 
-                        ? `أنت متصل الآن كـ (${googleUser.email}). مزامنة مواعيد حصص الأسبوع مباشرة لتلقي تنبيهات دورية على هاتفك والتحكم بيومك من الخارج.`
-                        : "اربط جدولك الدراسي الخصوصي بـ Google Calendar لمزامنة المواعيد كأحداث دورية متكررة واستقبل إشعارات تلقائية عبر هاتفك المحمول."
-                      }
-                    </p>
-                    {lastSyncTime && (
-                      <p className="text-[10px] text-slate-400 font-extrabold mt-1">
-                        آخر مزامنة ناجحة: <span className="text-indigo-600">{lastSyncTime}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {googleUser ? (
-                    <>
-                      <button
-                        onClick={handleSyncAll}
-                        disabled={isSyncing}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 text-xs font-bold rounded-xl shadow-md shadow-indigo-500/10 cursor-pointer transition-all active:scale-95"
-                      >
-                        <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
-                        <span>{isSyncing ? "جاري المزامنة..." : "مزامنة المواعيد الآن"}</span>
-                      </button>
-                      <button
-                        onClick={handleGoogleSignOut}
-                        disabled={isSyncing}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-extrabold rounded-xl cursor-pointer transition-all"
-                        title="تسجيل الخروج وفصل الحساب"
-                      >
-                        <LogOut size={14} />
-                        <span className="hidden sm:inline text-[11px]">فصل الحساب</span>
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={handleGoogleSignIn}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-250 hover:bg-slate-50 shadow-xs rounded-xl text-xs font-extrabold text-slate-700 cursor-pointer active:scale-95 transition-all"
-                    >
-                      <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4">
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                      </svg>
-                      <span>ربط الحساب والمزامنة مع Google</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Sync Progress Tracker */}
-              {syncStatus && (
-                <div className="mt-4 pt-4 border-t border-slate-100 text-xs font-bold">
-                  {isSyncing ? (
-                    <div className="space-y-2">
-                      <div className="flex justify-between font-extrabold text-slate-750">
-                        <span>جاري تحويل المواعيد الأسبوعية إلى تقويم جوجل...</span>
-                        <span className="font-mono">{syncStatus.current} / {syncStatus.total}</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-indigo-600 h-full transition-all duration-300 rounded-full" 
-                          style={{ width: `${(syncStatus.current / syncStatus.total) * 100}%` }}
-                        />
-                      </div>
-                      {syncStatus.studentName && (
-                        <p className="text-[10px] text-slate-400 font-extrabold">تجهيز موعد الطالب: {syncStatus.studentName}</p>
-                      )}
-                    </div>
-                  ) : (
-                    syncStatus.successCount !== undefined && (
-                      <div className="flex items-center gap-2.5 text-emerald-800 bg-emerald-50/50 border border-emerald-150 rounded-2xl p-3.5 font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-ping shrink-0" />
-                        <div>
-                          <p className="text-xs font-black">تمت مزاوجة جدول الحصص بنجاح مذهل!</p>
-                          <p className="text-[10px] text-emerald-600 font-bold mt-0.5">تمت إضافة/تحديث {syncStatus.successCount} حصص أسبوعية مجدولة وتثبيتها كأحداث مكررة مستمرة على تقويم Google Calendar الشخصي.</p>
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
+          {/* Today's Schedule Banner Highlights */}
+          <div className="premium-card p-4 sm:p-5 relative overflow-hidden">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-50 pointer-events-none hidden md:block">
+              <ClipboardCheck size={80} />
             </div>
-          )}
-
-      {/* Today's Schedule Banner Highlights */}
-      <div className="premium-card p-5 relative overflow-hidden">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-50 pointer-events-none hidden md:block">
-          <ClipboardCheck size={80} />
-        </div>
-        <h3 className="text-sm font-bold text-blue-600 flex items-center gap-1.5 mb-2">
-          <span>📅 حصص اليوم:</span>
-          <span className="text-slate-800 font-extrabold">{todayDayName}</span>
-        </h3>
-        
-        {todayAppointments.length === 0 ? (
-          <p className="text-xs text-slate-500 font-medium">لا توجد مواعيد حصص مجدولة لهذا اليوم. يوم هادئ ومثمر!</p>
-        ) : (
-          <div className="flex flex-wrap gap-3 mt-3">
-            {todayAppointments.map((app) => (
-              <div 
-                key={app.id} 
-                className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-2xl flex items-center gap-3 shadow-2xs"
-              >
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                  <Clock size={14} />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-850">{app.studentName}</p>
-                  <p className="text-[10px] font-mono text-slate-500 tracking-wider" dir="ltr">الساعة: {formatTimeTo12h(app.time)}</p>
-                </div>
+            <h3 className="text-sm font-bold text-blue-600 flex items-center gap-1.5 mb-2">
+              <span>📅 حصص اليوم:</span>
+              <span className="text-slate-800 font-extrabold">{todayDayName}</span>
+            </h3>
+            
+            {todayAppointments.length === 0 ? (
+              <p className="text-xs text-slate-500 font-medium">لا توجد مواعيد حصص مجدولة لهذا اليوم. يوم هادئ ومثمر!</p>
+            ) : (
+              <div className="flex flex-wrap gap-2.5 mt-2.5">
+                {todayAppointments.map((app) => (
+                  <div 
+                    key={app.id} 
+                    className="bg-slate-50 border border-slate-200 px-3 py-2 rounded-2xl flex items-center gap-2.5 shadow-2xs"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                      <Clock size={13} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-850">{app.studentName}</p>
+                      <p className="text-[9.5px] font-mono text-slate-500" dir="ltr">الساعة: {formatTimeTo12h(app.time)}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Drag & Drop Help Instruction Banner */}
-      <div className="bg-blue-50/55 border border-blue-150 p-3.5 rounded-2xl text-[11px] font-bold text-blue-800 leading-relaxed flex items-center gap-2.5">
-        <span className="text-base select-none">💡</span>
-        <p>
-          <span className="text-blue-900 font-extrabold">ميزة ذكية لتنظيم الوقت:</span> يمكنك سحب أي حصة وإفلاتها (Drag & Drop) على يوم آخر بالجدول لتغيير يوم الطالب وتحديث قائمة التنبيهات ولينكات تذكير واتساب فوراً وبأمان!
-        </p>
-      </div>
+          {/* Day Filter Slider for Mobile & Desktop - Perfect Responsive Scheduling Layout */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between pb-1">
+              <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1">
+                <span>🗓️</span> تصفح وتوجيه أيام الجدول الدراسي:
+              </span>
+              <span className="text-[10px] bg-slate-100 text-slate-600 font-extrabold px-2 py-0.5 rounded-md">
+                {selectedDayFilter === 'الكل' ? 'عرض كافة أيام الأسبوع' : `عرض يوم: ${selectedDayFilter}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none scroll-smooth">
+              <button
+                type="button"
+                onClick={() => setSelectedDayFilter('الكل')}
+                className={`px-3.5 py-2 rounded-full text-xs font-black transition whitespace-nowrap border cursor-pointer select-none ${
+                  selectedDayFilter === 'الكل'
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                    : 'bg-white border-slate-250 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                كل الأيام ({appointments.length})
+              </button>
+              {DAYS_OF_WEEK.map((day) => {
+                const count = (groupedAppointments[day] || []).length;
+                const isToday = day === todayDayName;
+                const meta = DAY_METADATA[day];
+                const DayIcon = meta?.icon || Calendar;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelectedDayFilter(day)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold transition whitespace-nowrap border cursor-pointer select-none flex items-center gap-1.5 ${
+                      selectedDayFilter === day
+                        ? 'bg-blue-600 border-blue-605 text-white shadow-md'
+                        : isToday
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-black'
+                        : count > 0
+                        ? 'bg-blue-50/50 border-blue-100 text-blue-600'
+                        : 'bg-white border-slate-250 text-slate-500'
+                    }`}
+                  >
+                    <DayIcon size={13} className={selectedDayFilter === day ? 'text-white' : meta?.iconColor || 'text-slate-400'} />
+                    <span>{day}</span>
+                    {count > 0 && (
+                      <span className={`text-[9px] px-1.5 py-0.25 rounded-full ${
+                        selectedDayFilter === day ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      {/* Grid of Days of the Week Planner */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-in fade-in zoom-in-95 duration-200">
-        {DAYS_OF_WEEK.map((day) => {
+          {/* Drag & Drop Help Instruction Banner */}
+          <div className="bg-blue-50/55 border border-blue-150 p-3.5 rounded-2xl text-[11px] font-bold text-blue-800 leading-relaxed flex items-center gap-2.5">
+            <span className="text-base select-none">💡</span>
+            <p>
+              <span className="text-blue-900 font-extrabold">ميزة ذكية لتنظيم الوقت:</span> يمكنك سحب أي حصة وإفلاتها (Drag & Drop) على يوم آخر بالجدول لتغيير يوم الطالب وتحديث قائمة التنبيهات ولينكات تذكير واتساب فوراً وبأمان!
+            </p>
+          </div>
+
+          {/* Grid of Days of the Week Planner */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-in fade-in zoom-in-95 duration-200">
+            {(selectedDayFilter === 'الكل' ? DAYS_OF_WEEK : [selectedDayFilter]).map((day) => {
           const dayApps = groupedAppointments[day] || [];
           const isToday = day === todayDayName;
           const isDraggedOver = draggedOverDay === day;
@@ -570,12 +657,34 @@ export default function Scheduler({
               }`}
             >
               <div>
-                <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
-                  <h4 className="font-extrabold text-sm text-slate-800 flex items-center gap-1.5">
-                    <span className={`w-1.5 h-3 rounded ${isToday ? 'bg-blue-600' : 'bg-slate-400'}`} />
-                    {day}
-                  </h4>
-                  <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-slate-50 text-slate-500 border border-slate-150">
+                <div className="flex justify-between items-start pb-3 border-b border-slate-100 mb-3.5 gap-2 text-right">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {(() => {
+                      const meta = DAY_METADATA[day];
+                      const DayIcon = meta?.icon || Calendar;
+                      return (
+                        <>
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${meta?.badgeColor || 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                            <DayIcon size={17} className="transition-transform duration-300" />
+                          </div>
+                          <div className="text-right min-w-0">
+                            <h4 className="font-extrabold text-sm text-slate-950 tracking-tight flex items-center gap-1">
+                              <span>{day}</span>
+                              {isToday && (
+                                <span className="text-[9px] bg-indigo-650 text-white font-black px-1.5 py-0.25 rounded-md animate-pulse">
+                                  اليوم
+                                </span>
+                              )}
+                            </h4>
+                            <p className="text-[10px] text-slate-400 font-extrabold truncate">
+                              {meta?.description || 'مواعيد ودروس الأسبوع'}
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-lg font-black shrink-0 bg-slate-50 text-slate-600 border border-slate-150">
                     {dayApps.length} حصص
                   </span>
                 </div>
@@ -870,7 +979,7 @@ export default function Scheduler({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 text-right text-slate-800 font-sans"
+              className="relative w-full max-w-md max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-2xl z-10 text-right text-slate-800 font-sans scrollbar-thin"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-blue-900 flex items-center gap-2">
@@ -893,6 +1002,7 @@ export default function Scheduler({
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    if (examConflictError) return;
                     if (!examStudentId) return;
                     const matStudent = students.find(s => s.id === examStudentId);
                     if (!matStudent) return;
@@ -979,6 +1089,13 @@ export default function Scheduler({
                     />
                   </div>
 
+                  {examConflictError && (
+                    <div className="p-3.5 bg-red-50 text-red-800 border bg-red-50 border-red-150 rounded-2xl text-[11px] font-black text-right leading-relaxed">
+                      ⚠️ <strong>تنبيه تعارض موعد الاختبار:</strong>
+                      <p className="mt-1 font-semibold text-red-700">{examConflictError}</p>
+                    </div>
+                  )}
+
                   <div className="pt-2 flex justify-end gap-3.5 font-sans">
                     <button
                       type="button"
@@ -989,7 +1106,8 @@ export default function Scheduler({
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl cursor-pointer transition-all shadow-md active:scale-95"
+                      disabled={!!examConflictError}
+                      className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-50 disabled:text-slate-400 rounded-xl cursor-pointer transition-all shadow-md active:scale-95"
                     >
                       حفظ موعد الامتحان
                     </button>
@@ -1019,7 +1137,7 @@ export default function Scheduler({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 text-right text-slate-800"
+              className="relative w-full max-w-md max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-2xl z-10 text-right text-slate-800 scrollbar-thin"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-blue-900 flex items-center gap-2">
@@ -1101,6 +1219,50 @@ export default function Scheduler({
                     </div>
                   </div>
 
+                  {/* Duration Option Selector */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-slate-600 font-bold block">مدة الحصة الدراسية *</label>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 border border-slate-200/80 p-1.5 rounded-2xl">
+                      <button
+                        type="button"
+                        onClick={() => setDurationOption('1H')}
+                        className={`py-1.5 text-xs font-bold rounded-xl transition cursor-pointer select-none ${
+                          durationOption === '1H'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-200/40'
+                        }`}
+                      >
+                        ساعة واحدة (عادي)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDurationOption('2H')}
+                        className={`py-1.5 text-xs font-bold rounded-xl transition cursor-pointer select-none ${
+                          durationOption === '2H'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-200/40'
+                        }`}
+                      >
+                        ساعتين ⚠️
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Duration 2-Hour Warnings */}
+                  {durationOption === '2H' && (
+                    <div className="p-3 bg-amber-50 text-amber-900 rounded-2xl border border-amber-150 text-[10.5px] font-semibold leading-relaxed text-right animate-pulse">
+                      ⚠️ <strong>تنبيه خيار الساعتين:</strong> تم تحديد حصة بمدة ساعتين. يرجى التأكد من عدم وجود حصص أخرى محجوزة مباشرة بعد هذا التوقيت لتفادي تداخل المواعيد.
+                    </div>
+                  )}
+
+                  {/* Conflict Error Notification Block */}
+                  {conflictError && (
+                    <div className="p-3.5 bg-red-50 text-red-800 border bg-red-50 border-red-150 rounded-2xl text-[11px] font-black text-right leading-relaxed">
+                      ⚠️ <strong>تنبيه تعارض وقت الحصص:</strong>
+                      <p className="mt-1 font-semibold text-red-700">{conflictError}</p>
+                    </div>
+                  )}
+
                   {/* Notes fields - Optional */}
                   <div className="space-y-1">
                     <label className="text-xs text-slate-600 font-bold block">ملاحظة إضافية (اختياري)</label>
@@ -1137,7 +1299,7 @@ export default function Scheduler({
                     </button>
                     <button
                       type="submit"
-                      disabled={!selectedStudentId}
+                      disabled={!selectedStudentId || !!conflictError}
                       className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-50 disabled:text-slate-400 rounded-xl cursor-pointer transition-all shadow-md"
                     >
                       حفظ الموعد
@@ -1168,7 +1330,7 @@ export default function Scheduler({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 font-sans text-right text-slate-800"
+              className="relative w-full max-w-sm max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-2xl z-10 font-sans text-right text-slate-800 scrollbar-thin"
             >
               <div className="flex gap-3.5 items-start mb-4">
                 <div className="w-11 h-11 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center shrink-0 text-red-650">
@@ -1227,7 +1389,7 @@ export default function Scheduler({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 font-sans text-right text-slate-800"
+              className="relative w-full max-w-md max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-2xl z-10 font-sans text-right text-slate-800 scrollbar-thin"
             >
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                 <h3 className="text-base font-bold text-blue-900 flex items-center gap-2">
@@ -1280,6 +1442,13 @@ export default function Scheduler({
                   </div>
                 </div>
 
+                {rescheduleConflictError && (
+                  <div className="p-3 bg-red-50 text-red-800 border bg-red-50 border-red-150 rounded-2xl text-[11px] font-black text-right leading-relaxed">
+                    ⚠️ <strong>تنبيه تعارض الموعد:</strong>
+                    <p className="mt-1 font-semibold text-red-700">{rescheduleConflictError}</p>
+                  </div>
+                )}
+
                 {/* Notes update */}
                 <div className="space-y-1">
                   <label className="text-xs text-slate-600 font-bold block">ملاحظات الحصة (اختياري)</label>
@@ -1302,7 +1471,8 @@ export default function Scheduler({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl cursor-pointer transition-all shadow-md flex items-center gap-1.5 justify-center"
+                    disabled={!!rescheduleConflictError}
+                    className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-50 disabled:text-slate-400 rounded-xl cursor-pointer transition-all shadow-md flex items-center gap-1.5 justify-center"
                   >
                     <CalendarClock size={13} />
                     <span>تحديث الموعد (إعادة جدولة)</span>
@@ -1332,7 +1502,7 @@ export default function Scheduler({
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 font-sans text-right text-slate-800"
+              className="relative w-full max-w-md max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 shadow-2xl z-10 font-sans text-right text-slate-800 scrollbar-thin"
             >
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
                 <h3 className="text-base font-bold text-amber-900 flex items-center gap-2">

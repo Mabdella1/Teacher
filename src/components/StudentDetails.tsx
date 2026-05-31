@@ -4,12 +4,11 @@ import {
   ArrowLeft, FileSpreadsheet, Plus, DollarSign, Clock, Notebook, 
   Trash2, Phone, Sparkles, CheckCircle, HelpCircle, CalendarCheck, CreditCard, 
   TrendingUp, AlertTriangle, FileText, Download, Loader2, User, Camera, Upload, X,
-  Award, Gift, History, Edit, Share2, Send, Filter, BookOpen, MessageCircle, QrCode
+  Award, Gift, History, Edit, Share2, Send, Filter, BookOpen, MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import QRCode from 'qrcode';
 import { formatTimeTo12h } from '../lib/timeUtils';
 
 interface StudentDetailsProps {
@@ -41,35 +40,6 @@ export default function StudentDetails({
   const [aiAdvice, setAiAdvice] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-
-  // Student QR Code Identity state and generator
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
-  useEffect(() => {
-    let active = true;
-    QRCode.toDataURL(`student-qr:${student.id}`, { 
-      margin: 1.5, 
-      width: 256,
-      color: {
-        dark: '#1e293b', // Deep slate for ideal scanning readability
-        light: '#ffffff'
-      }
-    }, (err, url) => {
-      if (!err && active) {
-        setQrCodeUrl(url);
-      }
-    });
-    return () => { active = false; };
-  }, [student.id]);
-
-  const handleDownloadQR = () => {
-    if (!qrCodeUrl) return;
-    const link = document.createElement('a');
-    link.href = qrCodeUrl;
-    link.download = `QR_${student.name.replace(/\s+/g, '_')}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   // Photo editing state for student details profile card
   const [isDetailsCameraActive, setIsDetailsCameraActive] = useState(false);
@@ -765,7 +735,10 @@ export default function StudentDetails({
         scale: 2.2, // Ultra-sharp high quality
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 800
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -1080,51 +1053,6 @@ export default function StudentDetails({
                   }`}>
                     {student.autoReminder ? 'نشط 🔔' : 'معطل 🔕'}
                   </span>
-                </div>
-              </div>
-
-              {/* Column 3: Student QR Identity Card */}
-              <div className="bg-slate-50/50 border border-slate-150/65 p-4.5 rounded-2xl flex flex-col items-center justify-between text-center h-full space-y-3.5">
-                <div className="w-full space-y-3">
-                  <h3 className="text-xs font-black text-slate-700 border-b border-slate-150/85 pb-2 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-indigo-600"><QrCode size={14} /></span>
-                      <span>رمز التعريف السريع QR</span>
-                    </span>
-                    <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-extrabold rounded-md">آمن 🔒</span>
-                  </h3>
-
-                  <div className="flex flex-col items-center justify-center bg-white border border-slate-200 p-4 rounded-xl shadow-inner relative group/qr w-full">
-                    {qrCodeUrl ? (
-                      <img 
-                        src={qrCodeUrl} 
-                        alt="Student QR Identity" 
-                        className="w-28 h-28 object-contain transition-transform duration-300 group-hover/qr:scale-105"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-28 h-28 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-semibold rounded-lg">
-                        جاري تهيئة الرمز...
-                      </div>
-                    )}
-                    <span className="text-[9px] font-mono font-bold text-slate-400 mt-2 block select-all">
-                      ID: {student.id}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="w-full space-y-2">
-                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed max-w-[200px] mx-auto">
-                    امسح هذا الرمز المخصص عبر كاميرا لوحة التحكم للانتقال لملف <strong className="text-slate-700 font-black">{student.name}</strong> فوراً بلمسة واحدة!
-                  </p>
-
-                  <button
-                    onClick={handleDownloadQR}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black cursor-pointer transition-all active:scale-95 shadow-sm"
-                  >
-                    <Download size={12} />
-                    <span>تحميل بطاقة QR</span>
-                  </button>
                 </div>
               </div>
 
@@ -3121,7 +3049,7 @@ ${note.content}
       </AnimatePresence>
 
       {/* Hidden PDF Report Template used to generate high-DPI PDF */}
-      <div className="absolute top-0 left-0 pointer-events-none opacity-0 select-none overflow-hidden" style={{ width: '800px', height: 'auto', zIndex: -100 }}>
+      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '800px', height: 'auto', opacity: 1, visibility: 'visible', zIndex: -100 }}>
         <div id="student-pdf-report" className="bg-white p-8 font-sans text-right relative text-slate-850 rounded-3xl shadow-lg border border-slate-100" dir="rtl" style={{ width: '800px' }}>
           {/* Elegant Header with custom color banner */}
           <div className="border-b-4 border-indigo-600 pb-5 mb-6 flex justify-between items-end">

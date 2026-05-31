@@ -424,33 +424,41 @@ export default function Dashboard({ students, appointments, preferences, onSelec
     <div className="space-y-6 select-none font-sans animate-in fade-in duration-200">
       
       {/* 1. Header Hero Panel */}
-      <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden shadow-lg border border-slate-800">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-650/15 rounded-full blur-3xl -z-10" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-650/10 rounded-full blur-3xl -z-10" />
+      <div className="bg-gradient-to-br from-indigo-650 via-blue-650 to-indigo-850 text-white rounded-3xl p-6 relative overflow-hidden shadow-xl shadow-blue-500/10 border-0">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -z-10" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-350/15 rounded-full blur-3xl -z-10" />
         
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10 w-full">
           <div className="space-y-1.5 text-right">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold bg-indigo-500/10 border border-indigo-400/20 text-indigo-400">
-              <Sparkles size={11} />
-              لوحة التحكم الذكية المعززة
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold bg-white/10 border border-white/20 text-white">
+              <Sparkles size={11} className="text-amber-300" />
+              لوحة التحكم الذكية السحابية
             </span>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">
               أهلاً بك، {teacherName} 👋
             </h1>
-            <p className="text-xs sm:text-sm text-slate-350 font-medium leading-relaxed">
-              إليك مراجعة بصرية ذكية شاملة وإحصائيات فورية لأداء طلابك ومستحقاتك المالية في مادة <span className="text-indigo-400 font-extrabold">{subject}</span>.
+            <p className="text-xs sm:text-sm text-indigo-50 font-medium leading-relaxed">
+              إليك مراجعة بصرية ذكية شاملة وإحصائيات فورية لأداء طلابك ومستحقاتك المالية في مادة <span className="text-amber-300 font-extrabold">{subject}</span>.
             </p>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-md border border-slate-700/60 p-3.5 rounded-2xl flex items-center gap-3 shrink-0 self-stretch md:self-auto justify-between md:justify-start">
+          <div className="bg-white text-slate-900 border border-slate-100 shadow-xl p-3.5 pr-4 rounded-2xl flex items-center gap-4 shrink-0 self-stretch md:self-auto justify-between md:justify-start min-w-[210px]">
             <div className="space-y-0.5 text-right md:pl-2">
-              <span className="text-[9px] text-slate-450 font-extrabold block">تاريخ اليوم المعتمد</span>
-              <span className="text-xs font-black text-white font-mono leading-none">
-                {sysTime.toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-              </span>
+              <span className="text-[10px] text-indigo-600 font-black block tracking-wide">🏆 تاريخ اليوم المعتمد</span>
+              <div className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+                {sysTime.toLocaleDateString('ar-EG', { weekday: 'long' })}
+              </div>
+              <div className="text-xs font-extrabold text-slate-500 font-sans mt-0.5 whitespace-nowrap">
+                {sysTime.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </div>
             </div>
-            <div className="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/20 shrink-0">
-              <Calendar size={18} />
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-650 text-white flex flex-col items-center justify-center shadow-md shadow-indigo-600/10 shrink-0 border border-indigo-400/20 overflow-hidden">
+              <div className="bg-indigo-700/60 w-full text-center py-0.5 text-[8px] font-black uppercase tracking-wider leading-none text-indigo-100">
+                {sysTime.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
+              </div>
+              <div className="flex-1 flex items-center justify-center text-white font-black text-sm font-sans leading-none pb-0.5">
+                {sysTime.getDate()}
+              </div>
             </div>
           </div>
         </div>

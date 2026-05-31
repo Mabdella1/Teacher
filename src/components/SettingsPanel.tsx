@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { TeacherPreferences, Student, Appointment } from '../types';
 import { 
   Settings, KeyRound, CloudLightning, Database, Download, Upload, Trash2, 
-  RefreshCw, Key, ShieldCheck, AlertTriangle, Palette, Check
+  RefreshCw, Key, ShieldCheck, AlertTriangle, Palette, Check, Sliders, Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { COLOR_PRESETS } from '../lib/theme';
@@ -42,6 +42,54 @@ export default function SettingsPanel({
     data?: any;
   } | null>(null);
   const [clearWord, setClearWord] = useState('');
+
+  // Notification threshold customization states
+  const [notifSettings, setNotifSettings] = useState(() => {
+    const DEFAULT = {
+      remindClasses: true,
+      classHoursThreshold: 2,
+      remindPayments: true,
+      paymentDaysThreshold: 3,
+      remindCompletion: true,
+      completionRemainingCount: 1,
+      notifyTeacherOnSessionComplete: true,
+      notifyTeacherOnNewPayment: true,
+      notifyTeacherOnPaymentDue: true,
+      dndEnabled: false,
+      dndStart: '22:00',
+      dndEnd: '08:00',
+    };
+    const stored = localStorage.getItem('teacherNotificationSettings');
+    if (stored) {
+      try {
+        return { ...DEFAULT, ...JSON.parse(stored) };
+      } catch (e) {}
+    }
+    return DEFAULT;
+  });
+
+  useEffect(() => {
+    const syncNotifSettings = () => {
+      const stored = localStorage.getItem('teacherNotificationSettings');
+      if (stored) {
+        try {
+          setNotifSettings(prev => ({ ...prev, ...JSON.parse(stored) }));
+        } catch (e) {}
+      }
+    };
+    window.addEventListener('notificationSettingsUpdated', syncNotifSettings);
+    return () => {
+      window.removeEventListener('notificationSettingsUpdated', syncNotifSettings);
+    };
+  }, []);
+
+  const saveNotifSetting = (updated: Partial<typeof notifSettings>) => {
+    const nextVal = { ...notifSettings, ...updated };
+    setNotifSettings(nextVal);
+    localStorage.setItem('teacherNotificationSettings', JSON.stringify(nextVal));
+    window.dispatchEvent(new Event('notificationSettingsUpdated'));
+    triggerSuccess('تم تحديث وتخصيص إعدادات تذكير التنبيهات بنجاح! 🔔');
+  };
 
   const handleSavePreferences = (e: React.FormEvent) => {
     e.preventDefault();
@@ -330,41 +378,6 @@ export default function SettingsPanel({
                   </button>
                 </div>
 
-                {/* 2. Hide Google Calendar */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-right">
-                  <div className="space-y-0.5 pl-3 min-w-0 flex-1">
-                    <span className="text-xs font-bold text-slate-850 flex items-center gap-1 justify-start">
-                      <span>📅</span>
-                      إخفاء ربط ومزامنة تقويم جوجل (Google Calendar API)
-                    </span>
-                    <p className="text-[10px] text-slate-500 leading-snug">تفعيل هذا الخيار يخفي لوحة مزامنة المواعيد مع تقويم جوجل لتسهيل مظهر واجهة المجدول والحد من الروابط البرمجية الخارجية.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextVal = !hideGoogleCalendar;
-                      setHideGoogleCalendar(nextVal);
-                      onUpdatePreferences({ hideGoogleCalendar: nextVal });
-                    }}
-                    className="shrink-0 transition-transform active:scale-95 cursor-pointer ml-1 text-right duration-150"
-                  >
-                    {hideGoogleCalendar ? (
-                      <span className="text-indigo-600 block transition-colors duration-200">
-                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <rect width="48" height="24" rx="12" fill="currentColor"/>
-                          <circle cx="36" cy="12" r="9" fill="white"/>
-                        </svg>
-                      </span>
-                    ) : (
-                      <span className="text-slate-350 block transition-colors duration-200">
-                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <rect width="48" height="24" rx="12" fill="currentColor"/>
-                          <circle cx="12" cy="12" r="9" fill="white"/>
-                        </svg>
-                      </span>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -372,7 +385,7 @@ export default function SettingsPanel({
             <div className="space-y-2 pt-3 border-t border-slate-100">
               <label className="text-xs text-slate-655 font-black block flex items-center gap-1.5">
                 <Palette className="text-blue-600" size={15} />
-                اللون الأساسي للتطبيق (Primary Color)
+                اللون الأساسي للتطبيق ومظهر واجهة التحكم (Theme & Primary Color)
               </label>
               <p className="text-[10px] text-slate-400 font-medium">اختر لونك المفضل ليتم تطبيقه فوراً على كافة الأزرار، والشرائط، والقوائم والتنبيهات الممتدة عبر النظام كاملاً.</p>
               
@@ -406,6 +419,57 @@ export default function SettingsPanel({
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Custom Theme Color Picker Orb */}
+              <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-right">
+                <div className="space-y-0.5">
+                  <span className="text-[11px] font-extrabold text-slate-850 block">🎨 أو حدد لوناً مخصصاً لعلامتك التجارية (Custom Color Color):</span>
+                  <p className="text-[9.5px] text-slate-405 font-semibold">تسمح لك هذه الميزة باختيار أي درجة لونية مخصصة مباشرة من عجلة الألوان أو لصق كود HEX المفضل لديك لتعيينه وتكراره في الواجهة فوراً.</p>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0 justify-end">
+                  <div className="relative flex items-center gap-1.5 bg-white border border-slate-250 rounded-xl px-2.5 py-1.5 shadow-3xs">
+                    {/* The Color Orb Picker */}
+                    <div className="relative w-6 h-6 rounded-full overflow-hidden border border-slate-300">
+                      <input 
+                        type="color" 
+                        value={primaryColor.startsWith('#') ? primaryColor : '#2563eb'} 
+                        onChange={(e) => {
+                          const customHex = e.target.value;
+                          setPrimaryColor(customHex);
+                          onUpdatePreferences({ primaryColor: customHex });
+                        }}
+                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                        title="افتح لوحة اختيار الألوان"
+                      />
+                      <div 
+                        className="w-full h-full pointer-events-none" 
+                        style={{ backgroundColor: primaryColor.startsWith('#') ? primaryColor : '#2563eb' }}
+                      />
+                    </div>
+                    {/* Hex Code Input */}
+                    <input 
+                      type="text" 
+                      value={primaryColor} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPrimaryColor(val);
+                        if (/^#[0-9A-Fa-f]{6}$/.test(val) || /^#[0-9A-Fa-f]{3}$/.test(val)) {
+                          onUpdatePreferences({ primaryColor: val });
+                        }
+                      }}
+                      className="w-20 text-center font-mono text-xs font-bold text-slate-750 bg-transparent border-0 focus:ring-0 focus:outline-hidden"
+                      dir="ltr"
+                      placeholder="#2563eb"
+                      maxLength={7}
+                    />
+                  </div>
+                  {primaryColor.startsWith('#') && (
+                    <span className="text-[9.5px] bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md font-extrabold select-none">
+                      مفعّل 🟢
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -478,21 +542,77 @@ export default function SettingsPanel({
             />
           </div>
 
-          {/* Manual & Cloud Backup Status Notice */}
-          <div className="pt-4 border-t border-slate-100 space-y-3">
+          {/* Dynamic Auto Backup/Google Drive Sync Selection */}
+          <div className="pt-4 border-t border-slate-150 space-y-3">
             <h4 className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5 justify-start">
-              <span className="text-blue-600">📥</span>
-              <span>نظام النسخ الاحتياطي والتحميل</span>
+              <span className="text-blue-600">🤖</span>
+              <span>مزامنة النسخ الاحتياطي التلقائي (Google Drive / السحابية)</span>
             </h4>
+            <p className="text-[10px] text-slate-505 leading-relaxed font-semibold">
+              اختر تكرار رفع ونسخ بياناتك تلقائيًا لمزامنتها مع حساب Google Drive والشبكة السحابية للأستاذ لضمان حمايتها من أي فقدان وتحديثها باستمرار.
+            </p>
             
-            <div className="p-3.5 bg-amber-50/50 border border-amber-150 rounded-2xl space-y-1">
-              <p className="text-xs font-black text-amber-800 flex items-center gap-1.5 justify-start">
-                <span>🔒 نظام الحفظ الاحتياطي: يدوي وسحابي فقط</span>
-              </p>
-              <p className="text-[10px] text-amber-700 leading-relaxed font-semibold">
-                تم إلغاء التنزيل والنسخ التلقائي تماماً لضمان الخصوصية والتحكم الكامل في سعة جهازك. النسخ الاحتياطي الآن يتم يدوياً عبر تحميل نسخة احتياطية (.JSON) أو سحابياً من خلال الزر أعلاه.
-              </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => onUpdatePreferences({ autoBackupDownloadInterval: 'daily' })}
+                className={`py-2 text-[11px] font-bold rounded-xl transition cursor-pointer select-none ${
+                  preferences.autoBackupDownloadInterval === 'daily'
+                    ? 'bg-blue-600 text-white shadow-sm font-black'
+                    : 'bg-white hover:bg-slate-200/55 text-slate-700 border border-slate-200'
+                }`}
+              >
+                يومي ⏱️
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdatePreferences({ autoBackupDownloadInterval: 'weekly' })}
+                className={`py-2 text-[11px] font-bold rounded-xl transition cursor-pointer select-none ${
+                  preferences.autoBackupDownloadInterval === 'weekly'
+                    ? 'bg-blue-600 text-white shadow-sm font-black'
+                    : 'bg-white hover:bg-slate-200/55 text-slate-700 border border-slate-200'
+                }`}
+              >
+                أسبوعي 🗓️
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdatePreferences({ autoBackupDownloadInterval: 'monthly' })}
+                className={`py-2 text-[11px] font-bold rounded-xl transition cursor-pointer select-none ${
+                  preferences.autoBackupDownloadInterval === 'monthly'
+                    ? 'bg-blue-600 text-white shadow-sm font-black'
+                    : 'bg-white hover:bg-slate-200/55 text-slate-700 border border-slate-200'
+                }`}
+              >
+                شهري 📅
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdatePreferences({ autoBackupDownloadInterval: 'disabled' })}
+                className={`py-2 text-[11px] font-bold rounded-xl transition cursor-pointer select-none ${
+                  preferences.autoBackupDownloadInterval === 'disabled' || !preferences.autoBackupDownloadInterval
+                    ? 'bg-slate-700 text-white shadow-sm font-black'
+                    : 'bg-white hover:bg-slate-200/55 text-slate-700 border border-slate-200'
+                }`}
+              >
+                إيجاف المزامنة ❌
+              </button>
             </div>
+
+            {preferences.autoBackupDownloadInterval && preferences.autoBackupDownloadInterval !== 'disabled' ? (
+              <div className="p-3 bg-emerald-50 text-emerald-900 rounded-2xl border border-emerald-150 text-[10.5px] font-semibold leading-relaxed text-right flex items-center gap-2">
+                <span>🛡️</span>
+                <span><strong>المزامنة التلقائية مفعلة:</strong> يتم حالياً جدولة مزامنة بياناتك بشكل <strong>{
+                  preferences.autoBackupDownloadInterval === 'daily' ? 'يومي متكرر' :
+                  preferences.autoBackupDownloadInterval === 'weekly' ? 'أسبوعي منتظم' : 'شهري دوري'
+                }</strong> على السحابة وجوجل درايف.</span>
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50 text-amber-900 rounded-2xl border border-amber-150 text-[10.5px] font-semibold leading-relaxed text-right flex items-center gap-2">
+                <span>🚨</span>
+                <span><strong>المزامنة التلقائية ملغاة:</strong> تم إيقاف النسخ التلقائي. تقع مسؤولية الحفظ الاحتياطي الآن يدوياً بالكامل.</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -578,6 +698,261 @@ export default function SettingsPanel({
                 )}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* تخصيص وقت تنبيهات الحصص والدفعات */}
+        <div id="customize-notifications-card" className="premium-card p-6 space-y-4">
+          <h3 className="text-base font-extrabold text-slate-800 border-b border-slate-100 pb-3 flex items-center gap-2">
+            <Sliders size={18} className="text-indigo-600" />
+            تخصيص وقت التنبيه للتذكيرات (الحصص والدفعات)
+          </h3>
+
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-500 leading-relaxed font-semibold">
+              حدد بدقة وقت إرسال التنبيهات ونظام التذكير الذكي للحصص الدراسية اليومية وكذلك فترات استحقاق الرسوم والذمم المعلقة لطلابك.
+            </p>
+
+            <div className="space-y-4 pt-1">
+              {/* Section: Classes Reminder */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ remindClasses: !notifSettings.remindClasses })}
+                    className="text-blue-650 cursor-pointer hover:opacity-85"
+                  >
+                    {notifSettings.remindClasses ? (
+                      <span className="text-indigo-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2500/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span>🔔</span> تنبيهات بمواعيد الحصص اليومية
+                  </span>
+                </div>
+                {notifSettings.remindClasses && (
+                  <div className="flex items-center justify-end gap-2 text-right pt-2 border-t border-slate-200/50">
+                    <select
+                      value={notifSettings.classHoursThreshold}
+                      onChange={(e) => saveNotifSetting({ classHoursThreshold: Number(e.target.value) })}
+                      className="px-2.5 py-1.5 bg-white border border-slate-205 rounded-lg text-[11px] font-bold focus:outline-none focus:border-indigo-500 font-sans"
+                    >
+                      <option value="0.25">قبل 15 دقيقة</option>
+                      <option value="0.5">قبل 30 دقيقة</option>
+                      <option value="1">قبل ساعة واحدة</option>
+                      <option value="2">قبل ساعتين</option>
+                      <option value="3">قبل 3 ساعات</option>
+                      <option value="6">قبل 6 ساعات</option>
+                      <option value="12">قبل 12 ساعة</option>
+                      <option value="24">قبل يوم واحد (24 ساعة)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 font-medium">عرض التذكير قبل الحصة بـ:</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Section: Payment Due Reminder */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ remindPayments: !notifSettings.remindPayments })}
+                    className="text-blue-655 cursor-pointer hover:opacity-85"
+                  >
+                    {notifSettings.remindPayments ? (
+                      <span className="text-indigo-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span>💳</span> تذكير باستحقاق الرسوم والدفعات
+                  </span>
+                </div>
+                {notifSettings.remindPayments && (
+                  <div className="flex items-center justify-end gap-2 text-right pt-2 border-t border-slate-200/50">
+                    <select
+                      value={notifSettings.paymentDaysThreshold}
+                      onChange={(e) => saveNotifSetting({ paymentDaysThreshold: Number(e.target.value) })}
+                      className="px-2.5 py-1.5 bg-white border border-slate-205 rounded-lg text-[11px] font-bold focus:outline-none focus:border-indigo-500 font-sans"
+                    >
+                      <option value="1">قبل يوم واحد</option>
+                      <option value="2">قبل يومين</option>
+                      <option value="3">قبل 3 أيام</option>
+                      <option value="5">قبل 5 أيام</option>
+                      <option value="7">قبل أسبوع كامل</option>
+                      <option value="10">قبل 10 أيام</option>
+                      <option value="14">قبل أسبوعين (14 يوماً)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-500 font-medium">عرض التذكير قبل موعد الاستحقاق بـ:</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Section: Do Not Disturb Mode */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ dndEnabled: !notifSettings.dndEnabled })}
+                    className="text-indigo-650 cursor-pointer hover:opacity-85"
+                  >
+                    {notifSettings.dndEnabled ? (
+                      <span className="text-indigo-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                    <span>🌙</span> وضع عدم الإزعاج للمدرس (Do Not Disturb)
+                  </span>
+                </div>
+                {notifSettings.dndEnabled && (
+                  <div className="space-y-2.5 pt-2 border-t border-slate-200/50">
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-semibold text-right">
+                      بمجرد التفعيل، سيقوم النظام بكتم كافة أصوات الرنين المزعجة وإخفاء إشارات التنبيه خلال الفترة المحددة تلقائياً لتتمتع بقسط من الراحة.
+                    </p>
+                    <div className="flex items-center justify-end gap-3.5 text-right font-sans">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400 font-bold">من:</span>
+                        <input
+                          type="time"
+                          value={notifSettings.dndStart || '22:00'}
+                          onChange={(e) => saveNotifSetting({ dndStart: e.target.value })}
+                          className="px-2.5 py-1 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400 font-bold">إلى:</span>
+                        <input
+                          type="time"
+                          value={notifSettings.dndEnd || '08:00'}
+                          onChange={(e) => saveNotifSetting({ dndEnd: e.target.value })}
+                          className="px-2.5 py-1 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section: Teacher Personal Alerts */}
+              <div className="p-4 bg-blue-50/45 border border-blue-150 rounded-2xl space-y-3">
+                <span className="font-extrabold text-blue-900 text-xs block border-b border-blue-100 pb-2">
+                  🧑‍🏫 تخصيص تنبيهات المعلم التلقائية (Teacher Dashboard Alerts)
+                </span>
+                
+                {/* 1. Notify Session Complete */}
+                <div className="flex justify-between items-center text-xs">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ notifyTeacherOnSessionComplete: !notifSettings.notifyTeacherOnSessionComplete })}
+                    className="text-blue-600 cursor-pointer"
+                  >
+                    {notifSettings.notifyTeacherOnSessionComplete !== false ? (
+                      <span className="text-blue-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-700">تنبيه فوري للمعلم عند تسجيل حضور طالب لحصة 🟢</span>
+                </div>
+
+                {/* 2. Notify New Payment */}
+                <div className="flex justify-between items-center text-xs border-t border-blue-100 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ notifyTeacherOnNewPayment: !notifSettings.notifyTeacherOnNewPayment })}
+                    className="text-blue-600 cursor-pointer"
+                  >
+                    {notifSettings.notifyTeacherOnNewPayment !== false ? (
+                      <span className="text-blue-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-700">تنبيه فوري للمعلم عند تسجيل دفعة نقدية جديدة 💰</span>
+                </div>
+
+                {/* 3. Notify Payment Due */}
+                <div className="flex justify-between items-center text-xs border-t border-blue-100 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ notifyTeacherOnPaymentDue: !notifSettings.notifyTeacherOnPaymentDue })}
+                    className="text-blue-600 cursor-pointer"
+                  >
+                    {notifSettings.notifyTeacherOnPaymentDue !== false ? (
+                      <span className="text-blue-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-700">تنبيه عند اقتراب تاريخ استحقاق قسط الطالب ⏳</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -28,7 +28,17 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   smsEnabled: false,
   classTemplate: 'السلام عليكم يا [الاسم]، نود تذكيرك بموعد حصتنا اليوم الساعة [الوقت] إن شاء الله. بالتوفيق!',
   paymentTemplate: 'السلام عليكم يا [الاسم]، تذكير لطيف بمستحقات الكورس المتبقية وقيمتها [المتبقي] [العملة] المستحقة في [التاريخ]. شكراً لكم!',
-  completionTemplate: 'أهلاً يا [الاسم]، نود إخطارك باقتراب اكتمال حصص الكورس المسجلة لك بنجاح. لقد أنجزت [الحصص] حصة حتى الآن.'
+  completionTemplate: 'أهلاً يا [الاسم]، نود إخطارك باقتراب اكتمال حصص الكورس المسجلة لك بنجاح. لقد أنجزت [الحصص] حصة حتى الآن.',
+  
+  // Custom teacher alert settings
+  notifyTeacherOnSessionComplete: true,
+  notifyTeacherOnNewPayment: true,
+  notifyTeacherOnPaymentDue: true,
+  
+  // Do Not Disturb (DND) settings
+  dndEnabled: false,
+  dndStart: '22:00',
+  dndEnd: '08:00'
 };
 
 const DAYS_AR_MAP: { [key: number]: string } = {
@@ -121,6 +131,8 @@ const getUpcomingReviewTopics = (student: Student): string[] => {
 export default function NotificationCenter({ students, appointments, currency, preferences }: NotificationCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'alerts' | 'settings' | 'templates'>('alerts');
+  const [alertsSubTab, setAlertsSubTab] = useState<'students' | 'teacher'>('students');
+  const [teacherAlerts, setTeacherAlerts] = useState<AppNotification[]>([]);
   const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
   const [successMsg, setSuccessMsg] = useState('');
@@ -132,14 +144,37 @@ export default function NotificationCenter({ students, appointments, currency, p
 
   // Load settings on mount
   useEffect(() => {
-    const stored = localStorage.getItem('teacherNotificationSettings');
-    if (stored) {
-      try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) });
-      } catch (e) {
-        setSettings(DEFAULT_SETTINGS);
+    const loadSettings = () => {
+      const stored = localStorage.getItem('teacherNotificationSettings');
+      if (stored) {
+        try {
+          setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) });
+        } catch (e) {
+          setSettings(DEFAULT_SETTINGS);
+        }
       }
-    }
+    };
+
+    loadSettings();
+
+    const handleSettingsUpdate = () => {
+      loadSettings();
+    };
+    window.addEventListener('notificationSettingsUpdated', handleSettingsUpdate);
+
+    const loadTeacherAlerts = () => {
+      const storedAlerts = localStorage.getItem('teacherActionAlerts');
+      if (storedAlerts) {
+        try {
+          setTeacherAlerts(JSON.parse(storedAlerts));
+        } catch (e) {}
+      } else {
+        setTeacherAlerts([]);
+      }
+    };
+
+    loadTeacherAlerts();
+    window.addEventListener('teacherAlertsUpdated', loadTeacherAlerts);
 
     const dismissed = localStorage.getItem('teacherDismissedAlerts');
     if (dismissed) {
@@ -156,12 +191,18 @@ export default function NotificationCenter({ students, appointments, currency, p
     const interval = setInterval(() => {
       setSysTimeState(new Date());
     }, 30000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('notificationSettingsUpdated', handleSettingsUpdate);
+      window.removeEventListener('teacherAlertsUpdated', loadTeacherAlerts);
+    };
   }, []);
 
   const saveSettings = (newSettings: NotificationSettings) => {
     setSettings(newSettings);
     localStorage.setItem('teacherNotificationSettings', JSON.stringify(newSettings));
+    window.dispatchEvent(new Event('notificationSettingsUpdated'));
   };
 
   const triggerToast = (msg: string) => {
@@ -232,31 +273,70 @@ export default function NotificationCenter({ students, appointments, currency, p
   // 1. Upcoming classes reminder
   if (settings.remindClasses) {
     const todayDayArabic = DAYS_AR_MAP[sysTimeState.getDay()];
-    // find appointments scheduled for today
-    const todaysAppointments = appointments.filter(app => app.dayOfWeek === todayDayArabic);
+    const getLocalYMDStr = (d: Date): string => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+    const todayDateStr = getLocalYMDStr(sysTimeState);
+
+    // Find appointments scheduled for today (both weekly and exceptional ones)
+    const todaysAppointments = appointments.filter(app => {
+      if (app.isExceptional) {
+        return app.date === todayDateStr;
+      }
+      return app.dayOfWeek === todayDayArabic;
+    });
 
     todaysAppointments.forEach(app => {
       // Find associated student
       const student = students.find(s => s.id === app.studentId);
       if (student && student.active) {
-        const id = `class-${app.id}-${sysTimeState.toDateString()}`;
-        if (!dismissedAlerts.includes(id)) {
-          const filledMsg = fillTemplate(settings.classTemplate, student.name, { time: formatTimeTo12h(app.time) });
-          const waLink = getWhatsappLink(student.phone, filledMsg);
-          activeAlerts.push({
-            id,
-            studentId: student.id,
-            type: 'class',
-            title: `حصة قادمة اليوم: ${student.name}`,
-            message: `لديه حصة مجدولة اليوم في تمام الساعة ${formatTimeTo12h(app.time)} (${app.notes || 'لا يوجد مكان محدد'}).`,
-            date: 'اليوم',
-            read: false,
-            dynamicActionData: {
-              phone: student.phone,
-              whatsappLink: waLink,
-              rawMessage: filledMsg
+        // Parse class hour and minute
+        const [appH, appM] = app.time.split(':').map(Number);
+        
+        // Construct date-time for appointment today
+        const appDateTime = new Date(sysTimeState);
+        appDateTime.setHours(appH, appM, 0, 0);
+
+        const diffMs = appDateTime.getTime() - sysTimeState.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+
+        // We trigger the notification if remaining hours fits within the configured threshold
+        // and allow 1 hour grace period so it doesn't disappear immediately down to the minute.
+        if (diffHours <= settings.classHoursThreshold && diffHours >= -1) {
+          const id = `class-${app.id}-${sysTimeState.toDateString()}`;
+          if (!dismissedAlerts.includes(id)) {
+            const filledMsg = fillTemplate(settings.classTemplate, student.name, { time: formatTimeTo12h(app.time) });
+            const waLink = getWhatsappLink(student.phone, filledMsg);
+            
+            // Build intuitive localized countdown or timing label
+            let timingLabel = 'اليوم';
+            if (diffHours < 0) {
+              timingLabel = 'بدأت الحصة 🟢';
+            } else if (diffHours < 1) {
+              const minutes = Math.max(1, Math.round(diffHours * 60));
+              timingLabel = `خلال ${minutes} دقيقة ⚡`;
+            } else {
+              timingLabel = `خلال ${Math.round(diffHours)} ساعة`;
             }
-          });
+
+            activeAlerts.push({
+              id,
+              studentId: student.id,
+              type: 'class',
+              title: app.isExceptional ? `حصة استثنائية قادمة: ${student.name}` : `حصة قادمة اليوم: ${student.name}`,
+              message: `لديه حصة مجدولة اليوم في تمام الساعة ${formatTimeTo12h(app.time)} (${app.notes || 'لا يوجد مكان محدد'}).`,
+              date: timingLabel,
+              read: false,
+              dynamicActionData: {
+                phone: student.phone,
+                whatsappLink: waLink,
+                rawMessage: filledMsg
+              }
+            });
+          }
         }
       }
     });
@@ -451,6 +531,145 @@ export default function NotificationCenter({ students, appointments, currency, p
     }
   });
 
+  // Sound trigger when new teacher alerts come in (if not in DND)
+  const prevAlertsLength = React.useRef(teacherAlerts.length);
+  useEffect(() => {
+    if (teacherAlerts.length > prevAlertsLength.current) {
+      const isDndActiveNow = (): boolean => {
+        if (!settings.dndEnabled || !settings.dndStart || !settings.dndEnd) return false;
+        
+        const [startH, startM] = settings.dndStart.split(':').map(Number);
+        const [endH, endM] = settings.dndEnd.split(':').map(Number);
+        const now = new Date();
+        const currentH = now.getHours();
+        const currentM = now.getMinutes();
+        
+        const startMinutes = startH * 60 + startM;
+        const endMinutes = endH * 60 + endM;
+        const currentMinutes = currentH * 60 + currentM;
+        
+        if (startMinutes < endMinutes) {
+          return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+        } else {
+          return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+        }
+      };
+
+      if (!isDndActiveNow()) {
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+          osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+          osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); // G5
+          
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+          
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.5);
+        } catch (e) {}
+      }
+    }
+    prevAlertsLength.current = teacherAlerts.length;
+  }, [teacherAlerts, settings]);
+
+  // --- DO NOT DISTURB (DND) CHECK FOR RENDER ---
+  const isDndCurrentlyActive = (): boolean => {
+    if (!settings.dndEnabled || !settings.dndStart || !settings.dndEnd) return false;
+    
+    const [startH, startM] = settings.dndStart.split(':').map(Number);
+    const [endH, endM] = settings.dndEnd.split(':').map(Number);
+    const currentH = sysTimeState.getHours();
+    const currentM = sysTimeState.getMinutes();
+    
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    const currentMinutes = currentH * 60 + currentM;
+    
+    if (startMinutes < endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  };
+
+  const isDndActiveNow = isDndCurrentlyActive();
+
+  // --- COMPUTE TEACHER ALERTS ---
+  const computedTeacherAlerts: AppNotification[] = [...teacherAlerts];
+
+  // Dynamic due payments alert for teacher (only computed if notifyTeacherOnPaymentDue is enabled)
+  if (settings.notifyTeacherOnPaymentDue !== false) {
+    students.forEach(student => {
+      if (!student.active) return;
+
+      // Outstanding balance calculation
+      let outstanding = 0;
+      if (student.type === 'lesson') {
+        const totalCost = student.sessions.length * (student.lessonRate || 0);
+        const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
+        outstanding = totalCost - totalPaid;
+      } else {
+        const totalExtraCost = student.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0);
+        const totalCost = (student.coursePrice || 0) + totalExtraCost;
+        const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
+        outstanding = totalCost - totalPaid;
+      }
+
+      if (student.type === 'course' && student.dueDate && outstanding > 0) {
+        const dueDateObj = new Date(student.dueDate);
+        const diffTime = dueDateObj.getTime() - sysTimeState.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= settings.paymentDaysThreshold) {
+          const isOverdue = diffDays < 0;
+          const alertId = `t-due-${student.id}-${student.dueDate}`;
+          
+          if (!dismissedAlerts.includes(alertId)) {
+            computedTeacherAlerts.push({
+              id: alertId,
+              studentId: student.id,
+              type: 'teacher-due',
+              title: isOverdue ? '⚠️ تجاوز تاريخ استحقاق قسط الطالب' : '⏳ اقتراب موعد استحقاق قسط الطالب',
+              message: isOverdue 
+                ? `تخطى الطالب "${student.name}" موعد استحقاق قسطه المقرر في تاريخ ${student.dueDate}. القيمة المتأخرة المستحقة: ${outstanding} ${currency}.`
+                : `يقترب موعد سداد قسط الطالب "${student.name}" في تاريخ ${student.dueDate} (متبقي ${diffDays} يوم/أيام). المطلوب: ${outstanding} ${currency}.`,
+              date: isOverdue ? 'متأخرة' : `باقي ${diffDays} يوم`,
+              read: false,
+            });
+          }
+        }
+      }
+    });
+  }
+
+  const totalAlertsCount = activeAlerts.length + computedTeacherAlerts.length;
+
+  const handleDismissTeacherAlert = (id: string) => {
+    if (id.startsWith('t-due-')) {
+      const updated = [...dismissedAlerts, id];
+      setDismissedAlerts(updated);
+      localStorage.setItem('teacherDismissedAlerts', JSON.stringify(updated));
+    } else {
+      const stored = localStorage.getItem('teacherActionAlerts');
+      if (stored) {
+        try {
+          const list = JSON.parse(stored);
+          const filtered = list.filter((a: any) => a.id !== id);
+          localStorage.setItem('teacherActionAlerts', JSON.stringify(filtered));
+          window.dispatchEvent(new Event('teacherAlertsUpdated'));
+        } catch (e) {}
+      }
+    }
+    triggerToast('تم أرشفة وحذف التنبيه بنجاح');
+  };
+
   // Dismiss a specific alert from dashboard
   const handleDismissAlert = (id: string) => {
     const updated = [...dismissedAlerts, id];
@@ -470,11 +689,17 @@ export default function NotificationCenter({ students, appointments, currency, p
     <div id="notification-center-root" className="relative print:hidden">
       {/* Visual Bell indicator triggering button */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 border border-slate-200 hover:border-blue-100 rounded-xl transition duration-200 cursor-pointer flex items-center justify-center active:scale-95"
         title="التنبيهات الذكية وإشعارات الهاتف"
       >
-        {activeAlerts.length > 0 ? (
+        {isDndActiveNow ? (
+          <div className="relative">
+            <BellOff size={20} className="text-slate-400" />
+            <span className="absolute -top-1 -left-1 text-[10px]" title="وضع عدم الإزعاج مفعّل وطمس الأصوات">🌙</span>
+          </div>
+        ) : totalAlertsCount > 0 ? (
           <motion.div
             animate={{ rotate: [0, -10, 10, -10, 10, 0] }}
             transition={{ repeat: Infinity, repeatDelay: 4, duration: 0.5 }}
@@ -485,9 +710,9 @@ export default function NotificationCenter({ students, appointments, currency, p
           <BellOff size={20} className="text-slate-500" />
         )}
 
-        {activeAlerts.length > 0 && (
-          <span className="absolute -top-1.5 -left-1.5 min-w-5 h-5 px-1 bg-red-655 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white animate-pulse">
-            {activeAlerts.length}
+        {!isDndActiveNow && totalAlertsCount > 0 && (
+          <span className="absolute -top-1.5 -left-1.5 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white animate-pulse">
+            {totalAlertsCount}
           </span>
         )}
       </button>
@@ -514,36 +739,37 @@ export default function NotificationCenter({ students, appointments, currency, p
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-3.5">
                 <button
+                  type="button"
                   onClick={() => setIsOpen(false)}
                   className="p-1 mb-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-105 rounded-lg transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-slate-900">مركز الإشعارات وتذكير المواعيد</span>
+                  <span className="text-sm font-black text-slate-900">مركز الإشراقات وتذكير المواعيد</span>
                   <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
                 </div>
               </div>
 
               {/* Multi-Tab Navigation */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold mb-4">
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold mb-4 font-sans">
                 <button
                   type="button"
                   onClick={() => setActiveTab('alerts')}
                   className={`py-1.5 rounded-lg transition-all cursor-pointer text-center ${
                     activeTab === 'alerts'
-                      ? 'bg-white text-blue-750 shadow-sm'
+                      ? 'bg-white text-blue-700 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  تنبيهات ({activeAlerts.length})
+                  تنبيهات ({totalAlertsCount})
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('settings')}
                   className={`py-1.5 rounded-lg transition-all cursor-pointer text-center ${
                     activeTab === 'settings'
-                      ? 'bg-white text-blue-750 shadow-sm'
+                      ? 'bg-white text-blue-700 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -554,7 +780,7 @@ export default function NotificationCenter({ students, appointments, currency, p
                   onClick={() => setActiveTab('templates')}
                   className={`py-1.5 rounded-lg transition-all cursor-pointer text-center ${
                     activeTab === 'templates'
-                      ? 'bg-white text-blue-750 shadow-sm'
+                      ? 'bg-white text-blue-700 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -575,182 +801,290 @@ export default function NotificationCenter({ students, appointments, currency, p
                 {/* 1. Alerts Dashboard */}
                 {activeTab === 'alerts' && (
                   <div className="space-y-3.5">
-                    {activeAlerts.length === 0 ? (
-                      <div className="text-center py-10 space-y-3">
-                        <div className="w-12 h-12 bg-slate-50 border border-slate-150 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
-                          <CheckCheck size={22} />
+                    {/* Show DND active banner warning */}
+                    {isDndActiveNow && (
+                      <div className="flex items-center gap-2.5 p-3 bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-2xl font-sans mb-1 text-right">
+                        <span className="text-base select-none shrink-0 mb-0.5">🌙</span>
+                        <div className="leading-normal text-[10px] font-black">
+                          وضع عدم الإزعاج مفعّل وطمس الأصوات (تلقائياً من {settings.dndStart} وحتى {settings.dndEnd}). تم تعليق رنين وصوتيات الإشعارات لراحتك.
                         </div>
-                        <p className="text-xs text-slate-550 font-bold leading-normal">
-                          كل الحسابات مستقرة! لا توجد تذكيرات مستحقة أو حصص متأخرة اليوم بحوزتك.
-                        </p>
-                        {dismissedAlerts.length > 0 && (
-                          <button
-                            onClick={handleClearDismissed}
-                            className="text-[10px] text-blue-600 hover:underline cursor-pointer"
-                          >
-                            استعراض التنبيهات التي تم تجاهلها سابقاً ({dismissedAlerts.length})
-                          </button>
-                        )}
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center text-[10px] text-slate-400">
-                          <span>تحديث تلقائي مستمر</span>
+                    )}
+
+                    {/* Sub-Tabs Pills */}
+                    <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-50 border border-slate-150/60 rounded-xl font-bold mb-3 font-sans">
+                      <button
+                        type="button"
+                        onClick={() => setAlertsSubTab('students')}
+                        className={`py-1.5 rounded-lg transition-all text-center text-[10.5px] cursor-pointer font-black ${
+                          alertsSubTab === 'students'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-650 hover:bg-slate-105'
+                        }`}
+                      >
+                        إشعارات الطلاب ({activeAlerts.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAlertsSubTab('teacher')}
+                        className={`py-1.5 rounded-lg transition-all text-center text-[10.5px] cursor-pointer font-black ${
+                          alertsSubTab === 'teacher'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-650 hover:bg-slate-105'
+                        }`}
+                      >
+                        خاصة بالمعلم ({computedTeacherAlerts.length})
+                      </button>
+                    </div>
+
+                    {alertsSubTab === 'students' ? (
+                      activeAlerts.length === 0 ? (
+                        <div className="text-center py-10 space-y-3">
+                          <div className="w-12 h-12 bg-slate-50 border border-slate-150 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                            <CheckCheck size={22} />
+                          </div>
+                          <p className="text-xs text-slate-550 font-bold leading-normal">
+                            كل الحسابات مستقرة! لا توجد تذكيرات مستحقة أو حصص متأخرة اليوم لطلابك.
+                          </p>
                           {dismissedAlerts.length > 0 && (
                             <button
                               onClick={handleClearDismissed}
-                              className="text-blue-600 hover:underline cursor-pointer font-bold"
+                              className="text-[10px] text-blue-600 hover:underline cursor-pointer font-bold"
                             >
-                              إظهار المخفي ({dismissedAlerts.length})
+                              استعراض التنبيهات التي تم تجاهلها سابقاً ({dismissedAlerts.length})
                             </button>
                           )}
                         </div>
-
-                        {activeAlerts.map(alert => (
-                          <div
-                            key={alert.id}
-                            className={`p-3.5 border rounded-2xl transition-all relative group shadow-2xs ${
-                              alert.type === 'class'
-                                ? 'bg-blue-50/50 border-blue-100 hover:bg-blue-50'
-                                : alert.type === 'payment'
-                                ? 'bg-red-50/40 border-red-100 hover:bg-red-50/70'
-                                : 'bg-purple-50/50 border-purple-100 hover:bg-purple-50'
-                            }`}
-                          >
-                            <button
-                              onClick={() => handleDismissAlert(alert.id)}
-                              className="absolute top-2 left-2 text-slate-300 hover:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity p-0.5 rounded cursor-pointer"
-                              title="تجاهل وإخفاء التنبيه"
-                            >
-                              <Check size={14} className="hover:text-emerald-600" />
-                            </button>
-
-                            <div className="flex gap-2.5 items-start pl-4 font-sans">
-                              {/* Colored Visual badge */}
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                                alert.type === 'class'
-                                  ? 'bg-blue-100 border-blue-200 text-blue-600'
-                                  : alert.type === 'payment'
-                                  ? 'bg-red-100 border-red-200 text-red-650'
-                                  : 'bg-purple-100 border-purple-200 text-purple-600'
-                              }`}>
-                                {alert.type === 'class' && <Calendar size={15} />}
-                                {alert.type === 'payment' && <DollarSign size={15} />}
-                                {alert.type === 'completion' && <Award size={15} />}
-                              </div>
-
-                              <div className="flex-1 space-y-1">
-                                <span className="text-[10px] font-bold text-slate-400 bg-white/85 px-1.5 py-0.5 rounded border border-slate-100 float-left shadow-3xs">
-                                  {alert.date}
-                                </span>
-                                <h5 className="font-bold text-slate-900 leading-snug text-xs pr-1">
-                                  {alert.title}
-                                </h5>
-                                <p className="text-[10px] text-slate-500 leading-relaxed font-semibold whitespace-pre-line">
-                                  {alert.message}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Actions bar for alert */}
-                            <div className="mt-2.5 pt-2 border-t border-slate-200/50 flex gap-2 justify-end text-[10px] font-bold">
-                              {/* Send to WhatsApp prefilled shortcut */}
-                              {alert.dynamicActionData?.whatsappLink && settings.whatsappEnabled && (
-                                <a
-                                  href={alert.dynamicActionData.whatsappLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition duration-150 cursor-pointer shadow-sm"
-                                >
-                                  <Send size={11} className="text-emerald-100" />
-                                  <span>واتساب 🟢</span>
-                                </a>
-                              )}
-
-                              {/* Custom WhatsApp student templates if available */}
-                              {(() => {
-                                const student = students.find(s => s.id === alert.studentId);
-                                if (!student || !student.whatsAppTemplates || student.whatsAppTemplates.length === 0) return null;
-
-                                return (
-                                  <div className="relative inline-block text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => setOpenTemplatesAlertId(openTemplatesAlertId === alert.id ? null : alert.id)}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-250 rounded-xl transition cursor-pointer shadow-3xs"
-                                    >
-                                      <span>قوالب الطالب 💬</span>
-                                      <span className="text-[8px]">{openTemplatesAlertId === alert.id ? '▲' : '▼'}</span>
-                                    </button>
-
-                                    {openTemplatesAlertId === alert.id && (
-                                      <div className="absolute right-0 bottom-full mb-1.5 w-52 bg-white border border-slate-200 rounded-2xl shadow-2xl z-55 py-2 font-sans text-right max-h-48 overflow-y-auto">
-                                        <div className="px-3.5 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 mb-1 leading-relaxed">رسالة مخصصة لـ {student.name}:</div>
-                                        {student.whatsAppTemplates.map(tpl => {
-                                          let txt = tpl.text;
-                                          let outstanding = 0;
-                                          if (student.type === 'lesson') {
-                                            const totalCost = student.sessions.length * (student.lessonRate || 0);
-                                            const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
-                                            outstanding = totalCost - totalPaid;
-                                          } else {
-                                            const totalExtraCost = student.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0);
-                                            const totalCost = (student.coursePrice || 0) + totalExtraCost;
-                                            const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
-                                            outstanding = totalCost - totalPaid;
-                                          }
-                                          const lastSess = student.sessions.length > 0 ? student.sessions[student.sessions.length - 1] : null;
-
-                                          txt = txt.replace(/\[الاسم\]/g, student.name);
-                                          txt = txt.replace(/\[الوقت\]/g, lastSess?.time || '18:30');
-                                          txt = txt.replace(/\[التاريخ\]/g, lastSess?.date || new Date().toISOString().split('T')[0]);
-                                          txt = txt.replace(/\[المتبقي\]/g, String(outstanding > 0 ? outstanding : 0));
-                                          txt = txt.replace(/\[العملة\]/g, currency);
-                                          txt = txt.replace(/\[الحصص\]/g, String(student.sessions.length));
-
-                                          const rawPhone = student.phone.replace(/[^0-9]/g, '');
-                                          let cleanPhone = rawPhone;
-                                          if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-                                            cleanPhone = '2' + cleanPhone;
-                                          }
-                                          const tplUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(txt)}`;
-
-                                          return (
-                                            <a
-                                              key={tpl.id}
-                                              href={tplUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              onClick={() => setOpenTemplatesAlertId(null)}
-                                              className="block px-3.5 py-2 text-slate-705 hover:bg-slate-50 hover:text-emerald-700 transition font-bold text-[10px] truncate"
-                                              title={txt}
-                                            >
-                                              {tpl.title} 🚀
-                                            </a>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-
-                              {/* Trigger direct System Notification simulation for testing */}
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center text-[10px] text-slate-400">
+                            <span>تحديث تلقائي مستمر</span>
+                            {dismissedAlerts.length > 0 && (
                               <button
-                                onClick={() => handleSendTestPush(alert.title, alert.message)}
-                                className="flex items-center gap-1 px-2.5 py-1.2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer"
-                                title="إرسال دفعة إشعار عبر لسان الهاتف الحالي"
+                                onClick={handleClearDismissed}
+                                className="text-blue-600 hover:underline cursor-pointer font-bold"
                               >
-                                <Play size={10} className="text-slate-450" />
-                                <span>تجربة الإشعار</span>
+                                إظهار المخفي ({dismissedAlerts.length})
                               </button>
-                            </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
+
+                          {activeAlerts.map(alert => (
+                            <div
+                              key={alert.id}
+                              className={`p-3.5 border rounded-2xl transition-all relative group shadow-2xs ${
+                                alert.type === 'class'
+                                  ? 'bg-blue-50/50 border-blue-100 hover:bg-blue-50'
+                                  : alert.type === 'payment'
+                                  ? 'bg-red-50/40 border-red-100 hover:bg-red-50/70'
+                                  : 'bg-purple-50/50 border-purple-100 hover:bg-purple-50'
+                              }`}
+                            >
+                              <button
+                                onClick={() => handleDismissAlert(alert.id)}
+                                className="absolute top-2 left-2 text-slate-300 hover:text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity p-0.5 rounded cursor-pointer"
+                                title="تجاهل وإخفاء التنبيه"
+                              >
+                                <Check size={14} className="hover:text-emerald-600" />
+                              </button>
+
+                              <div className="flex gap-2.5 items-start pl-4 font-sans">
+                                {/* Colored Visual badge */}
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                                  alert.type === 'class'
+                                    ? 'bg-blue-100 border-blue-200 text-blue-600'
+                                    : alert.type === 'payment'
+                                    ? 'bg-red-100 border-red-200 text-red-650'
+                                    : 'bg-purple-100 border-purple-200 text-purple-600'
+                                }`}>
+                                  {alert.type === 'class' && <Calendar size={15} />}
+                                  {alert.type === 'payment' && <DollarSign size={15} />}
+                                  {alert.type === 'completion' && <Award size={15} />}
+                                </div>
+
+                                <div className="flex-1 space-y-1">
+                                  <span className="text-[10px] font-bold text-slate-400 bg-white/85 px-1.5 py-0.5 rounded border border-slate-100 float-left shadow-3xs">
+                                    {alert.date}
+                                  </span>
+                                  <h4 className="font-bold text-slate-900 leading-snug text-xs pr-1">
+                                    {alert.title}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-500 leading-relaxed font-semibold whitespace-pre-line">
+                                    {alert.message}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Actions bar for alert */}
+                              <div className="mt-2.5 pt-2 border-t border-slate-200/50 flex gap-2 justify-end text-[10px] font-bold">
+                                {/* Send to WhatsApp prefilled shortcut */}
+                                {alert.dynamicActionData?.whatsappLink && settings.whatsappEnabled && (
+                                  <a
+                                    href={alert.dynamicActionData.whatsappLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition duration-150 cursor-pointer shadow-sm"
+                                  >
+                                    <Send size={11} className="text-emerald-100" />
+                                    <span>واتساب 🟢</span>
+                                  </a>
+                                )}
+
+                                {/* Custom WhatsApp student templates if available */}
+                                {(() => {
+                                  const student = students.find(s => s.id === alert.studentId);
+                                  if (!student || !student.whatsAppTemplates || student.whatsAppTemplates.length === 0) return null;
+
+                                  return (
+                                    <div className="relative inline-block text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => setOpenTemplatesAlertId(openTemplatesAlertId === alert.id ? null : alert.id)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-250 rounded-xl transition cursor-pointer shadow-3xs"
+                                      >
+                                        <span>قوالب الطالب 💬</span>
+                                        <span className="text-[8px]">{openTemplatesAlertId === alert.id ? '▲' : '▼'}</span>
+                                      </button>
+
+                                      {openTemplatesAlertId === alert.id && (
+                                        <div className="absolute right-0 bottom-full mb-1.5 w-52 bg-white border border-slate-200 rounded-2xl shadow-2xl z-55 py-2 font-sans text-right max-h-48 overflow-y-auto">
+                                          <div className="px-3.5 py-1 text-[9px] font-black text-slate-400 border-b border-slate-100 mb-1 leading-relaxed">رسالة مخصصة لـ {student.name}:</div>
+                                          {student.whatsAppTemplates.map(tpl => {
+                                            let txt = tpl.text;
+                                            let outstanding = 0;
+                                            if (student.type === 'lesson') {
+                                              const totalCost = student.sessions.length * (student.lessonRate || 0);
+                                              const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
+                                              outstanding = totalCost - totalPaid;
+                                            } else {
+                                              const totalExtraCost = student.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0);
+                                              const totalCost = (student.coursePrice || 0) + totalExtraCost;
+                                              const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
+                                              outstanding = totalCost - totalPaid;
+                                            }
+                                            const lastSess = student.sessions.length > 0 ? student.sessions[student.sessions.length - 1] : null;
+
+                                            txt = txt.replace(/\[الاسم\]/g, student.name);
+                                            txt = txt.replace(/\[الوقت\]/g, lastSess?.time || '18:30');
+                                            txt = txt.replace(/\[التاريخ\]/g, lastSess?.date || new Date().toISOString().split('T')[0]);
+                                            txt = txt.replace(/\[المتبقي\]/g, String(outstanding > 0 ? outstanding : 0));
+                                            txt = txt.replace(/\[العملة\]/g, currency);
+                                            txt = txt.replace(/\[الحصص\]/g, String(student.sessions.length));
+
+                                            const rawPhone = student.phone.replace(/[^0-9]/g, '');
+                                            let cleanPhone = rawPhone;
+                                            if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
+                                              cleanPhone = '2' + cleanPhone;
+                                            }
+                                            const tplUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(txt)}`;
+
+                                            return (
+                                              <a
+                                                key={tpl.id}
+                                                href={tplUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                onClick={() => setOpenTemplatesAlertId(null)}
+                                                className="block px-3.5 py-2 text-slate-705 hover:bg-slate-50 hover:text-emerald-700 transition font-bold text-[10px] truncate"
+                                                title={txt}
+                                              >
+                                                {tpl.title} 🚀
+                                              </a>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Trigger direct System Notification simulation for testing */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendTestPush(alert.title, alert.message)}
+                                  className="flex items-center gap-1 px-2.5 py-1.2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer font-bold"
+                                  title="إرسال دفعة إشعار عبر لسان الهاتف الحالي"
+                                >
+                                  <Play size={10} className="text-slate-450 animate-pulse" />
+                                  <span>تجربة الإشعار</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    ) : (
+                      computedTeacherAlerts.length === 0 ? (
+                        <div className="text-center py-10 space-y-3">
+                          <div className="w-12 h-12 bg-slate-50 border border-slate-150 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                            <CheckCheck size={22} />
+                          </div>
+                          <p className="text-xs text-slate-550 font-bold leading-normal">
+                            لا توجد إشعارات مخصصة للمعلم حالياً! سيقوم النظام بإدراج تنبيهات الحصص المنجزة والدفعات المسجلة وأقساط الطلاب المستحقة بمجرد قيدها.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3 font-sans">
+                          <div className="flex justify-between items-center text-[10px] text-slate-400 mb-1">
+                            <span>أرشيف التنبيهات المكتملة</span>
+                            <span>تحديث لحظي مستمر</span>
+                          </div>
+
+                          {computedTeacherAlerts.map(alert => (
+                            <div
+                              key={alert.id}
+                              className={`p-3.5 border rounded-2xl transition-all relative group shadow-3xs text-right leading-relaxed ${
+                                alert.type === 'teacher-session'
+                                  ? 'bg-indigo-50/45 border-indigo-100 hover:bg-indigo-50/70'
+                                  : alert.type === 'teacher-payment'
+                                  ? 'bg-emerald-50/45 border-emerald-100 hover:bg-emerald-50/70'
+                                  : 'bg-red-50/35 border-red-105 hover:bg-red-50/65'
+                              }`}
+                            >
+                              <button
+                                onClick={() => handleDismissTeacherAlert(alert.id)}
+                                className="absolute top-2.5 left-2.5 text-slate-300 hover:text-red-500 opacity-65 group-hover:opacity-100 transition-all p-0.5 rounded cursor-pointer"
+                                title="أرشفة وحذف هذا التنبيه"
+                              >
+                                <X size={14} />
+                              </button>
+
+                              <div className="flex gap-2.5 items-start pl-4 font-sans text-right">
+                                {/* Icon Badge */}
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border text-xs font-bold leading-none ${
+                                  alert.type === 'teacher-session'
+                                    ? 'bg-indigo-100 border-indigo-200 text-indigo-700'
+                                    : alert.type === 'teacher-payment'
+                                    ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                                    : 'bg-red-100 border-red-200 text-red-700'
+                                }`}>
+                                  {alert.type === 'teacher-session' && '🧑‍🏫'}
+                                  {alert.type === 'teacher-payment' && '💰'}
+                                  {alert.type === 'teacher-due' && '⏳'}
+                                </div>
+
+                                <div className="flex-1 space-y-0.5 text-right">
+                                  <div className="flex items-center justify-between gap-2.5">
+                                    <h5 className="font-extrabold text-slate-950 text-xs leading-snug">
+                                      {alert.title}
+                                    </h5>
+                                    <span className="text-[9px] font-bold text-slate-400 bg-white/90 border border-slate-105 rounded px-1.5 py-0.5 shrink-0">
+                                      {alert.date}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 leading-relaxed font-semibold mt-1">
+                                    {alert.message}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
                     )}
                   </div>
                 )}
+
 
                 {/* 2. Toggle controls threshold configuration */}
                 {activeTab === 'settings' && (
@@ -777,16 +1111,19 @@ export default function NotificationCenter({ students, appointments, currency, p
                         </div>
                         {settings.remindClasses && (
                           <div className="flex items-center justify-end gap-2 text-right pr-6 pt-1">
-                            <span className="text-[10px] text-slate-500 font-bold">ساعة</span>
+                            <span className="text-[10px] text-slate-500 font-bold">وقت التنبيه</span>
                             <select
                               value={settings.classHoursThreshold}
                               onChange={(e) => saveSettings({ ...settings, classHoursThreshold: Number(e.target.value) })}
                               className="px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold focus:outline-none focus:border-blue-500 font-sans"
                             >
+                              <option value="0.25">قبل 15 دقيقة</option>
+                              <option value="0.5">قبل 30 دقيقة</option>
                               <option value="1">قبل ساعة واحدة</option>
                               <option value="2">قبل ساعتين</option>
                               <option value="3">قبل 3 ساعات</option>
                               <option value="6">قبل 6 ساعات</option>
+                              <option value="12">قبل 12 ساعة</option>
                               <option value="24">قبل يوم واحد (24 ساعة)</option>
                             </select>
                             <span className="text-[10px] text-slate-500 font-medium">عرض التذكير قبلها بـ:</span>
@@ -808,7 +1145,7 @@ export default function NotificationCenter({ students, appointments, currency, p
                         </div>
                         {settings.remindPayments && (
                           <div className="flex items-center justify-end gap-2 text-right pr-6 pt-1">
-                            <span className="text-[10px] text-slate-500 font-bold">يوم/أيام</span>
+                            <span className="text-[10px] text-slate-500 font-bold">وقت التنبيه</span>
                             <select
                               value={settings.paymentDaysThreshold}
                               onChange={(e) => saveSettings({ ...settings, paymentDaysThreshold: Number(e.target.value) })}
@@ -819,6 +1156,8 @@ export default function NotificationCenter({ students, appointments, currency, p
                               <option value="3">قبل 3 أيام</option>
                               <option value="5">قبل 5 أيام</option>
                               <option value="7">قبل أسبوع كامل</option>
+                              <option value="10">قبل 10 أيام</option>
+                              <option value="14">قبل أسبوعين (14 يوماً)</option>
                             </select>
                             <span className="text-[10px] text-slate-500 font-medium">عرض التذكير قبلها بـ:</span>
                           </div>

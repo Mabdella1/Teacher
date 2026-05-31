@@ -112,12 +112,22 @@ export interface NotificationSettings {
   classTemplate: string;
   paymentTemplate: string;
   completionTemplate: string;
+  
+  // Custom teacher alert settings
+  notifyTeacherOnSessionComplete?: boolean;
+  notifyTeacherOnNewPayment?: boolean;
+  notifyTeacherOnPaymentDue?: boolean;
+  
+  // Do Not Disturb (DND) settings
+  dndEnabled?: boolean;
+  dndStart?: string; // HH:MM format
+  dndEnd?: string; // HH:MM format
 }
 
 export interface AppNotification {
   id: string;
   studentId?: string;
-  type: 'class' | 'payment' | 'completion';
+  type: 'class' | 'payment' | 'completion' | 'teacher-session' | 'teacher-payment' | 'teacher-due';
   title: string;
   message: string;
   date: string; // ISO or human format
@@ -134,4 +144,13 @@ export interface ExamAppointment {
   notes?: string;
   subject?: string;
 }
+
+export interface TeacherAccount {
+  username: string;
+  fullName: string;
+  subject: string;
+  passwordHash: string; // Passcode or password representation
+  createdAt: string;
+}
+
 
