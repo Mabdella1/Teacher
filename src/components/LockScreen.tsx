@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   UserPlus, LogIn, Lock, GraduationCap, Grid,
-  Sparkles, CheckCircle2, ChevronRight, AlertCircle, Laptop, Smartphone
+  Sparkles, CheckCircle2, ChevronRight, AlertCircle, Laptop, Smartphone,
+  Copy, Check, ExternalLink
 } from 'lucide-react';
 import { COLOR_PRESETS } from '../lib/theme';
 import { emailSignUp, emailSignIn, googleSignIn, auth } from '../lib/firebaseAuth';
@@ -38,6 +39,8 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isInIframe, setIsInIframe] = useState(false);
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   // Check if PWA is already running as standalone or installed
   useEffect(() => {
@@ -292,6 +295,10 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
       const msg = err?.message || String(err);
       if (msg.includes('auth/popup-blocked') || msg.includes('popup_blocked_by_browser')) {
         setError('تنبيه: تم حظر النافذة المنبثقة! يرجى السماح بالنوافذ المنبثقة في إعدادات متصفحك لهذا الموقع، أو جرب فتح التطبيق في علامة تبويب جديدة مستقلة.');
+      } else if (msg.includes('auth/unauthorized-domain') || msg.includes('unauthorized-domain')) {
+        const currentDomain = window.location.hostname;
+        setUnauthorizedDomain(currentDomain);
+        setError('');
       } else if (msg.includes('auth/network-request-failed') || msg.includes('auth/internal-error') || window.self !== window.top) {
         setError('فشل الاتصال الآمن بـ Google. يحدث هذا غالباً بسبب قيود إطار المعاينة (Iframe) أو تفعيل حظر كوكيز الطرف الثالث بالمتصفح. يُنصح بشدة بالنقر فوق زر "فتح التطبيق في نافذة جديدة" بالأسفل وتجربة تسجيل الدخول ثانيةً، أو استخدام تسجيل الدخول بالبريد الإلكتروني.');
       } else {
@@ -343,6 +350,82 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
               >
                 <span>فتح التطبيق في نافذة مستقلة 🌍</span>
               </button>
+            </motion.div>
+          )}
+
+          {/* Unauthorized Domain Interactive Solution Card */}
+          {unauthorizedDomain && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-right flex flex-col gap-3 shadow-md border-r-4 border-r-rose-500"
+              dir="rtl"
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertCircle size={18} className="text-rose-600 mt-0.5 shrink-0" />
+                <div>
+                  <h4 className="text-xs font-black text-rose-950">تفعيل الدخول السحابي بجوجل (خطوة مطلوبة)</h4>
+                  <p className="text-[11px] text-rose-800 leading-relaxed mt-1 font-bold">
+                    لقد قمت بتصميم وبرمجة التطبيق ومزامنة السحابة بنجاح! كوني مساعد ذكاء اصطناعي (AI)، <strong>لا أملك صلاحيات تعديل حسابك الشخصي</strong> في جوجل أو Firebase لإضافة نطاقاتك تلقائياً. يرجى القيام بهذه الخطوة البسيطة والسريعة لتفعيل الدخول المباشر بجوجل:
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 1: Copy Domain */}
+              <div className="bg-white border border-rose-100 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                <span className="font-mono text-xs text-slate-800 select-all font-semibold overflow-x-auto whitespace-nowrap max-w-[200px]" dir="ltr">
+                  {unauthorizedDomain}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(unauthorizedDomain);
+                    setCopiedDomain(true);
+                    setTimeout(() => setCopiedDomain(false), 2000);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 ${
+                    copiedDomain 
+                      ? 'bg-emerald-600 text-white shadow-sm' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {copiedDomain ? (
+                    <>
+                      <Check size={11} />
+                      <span>تم النسخ!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={11} />
+                      <span>نسخ النطاق</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Step 2: Open Firebase link */}
+              <div className="flex items-center gap-2 mt-1">
+                <a
+                  href="https://console.firebase.google.com/project/inductive-rigging-q5xj8/authentication/providers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] transition-all text-white font-black text-[11px] rounded-xl flex items-center justify-center gap-1.5 shadow-sm shadow-rose-600/10 cursor-pointer"
+                >
+                  <ExternalLink size={12} />
+                  <span>انتقل إلى إعدادات Firebase 🚀</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setUnauthorizedDomain(null)}
+                  className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[11px] rounded-xl transition cursor-pointer"
+                >
+                  إغلاق
+                </button>
+              </div>
+
+              <div className="text-[10px] text-rose-700/85 leading-normal bg-rose-100/30 rounded-lg p-2 font-bold" dir="rtl">
+                💡 <strong>طريقة التفعيل:</strong> بمجرد فتح الرابط، انزل لأسفل الصفحة لقسم <strong>Authorized Domains (النطاقات المعتمدة)</strong>، اضغط <strong>Add Domain</strong> ثم الصق النطاق المنسوخ واضغط <strong>Save</strong>. سيشتغل الدخول بجوجل مباشرة!
+              </div>
             </motion.div>
           )}
 
