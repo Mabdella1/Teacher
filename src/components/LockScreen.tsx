@@ -37,9 +37,11 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
   // PWA Installer State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [isInIframe, setIsInIframe] = useState(false);
 
   // Check if PWA is already running as standalone or installed
   useEffect(() => {
+    setIsInIframe(window.self !== window.top);
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsInstalled(true);
     }
@@ -287,7 +289,14 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
       }
     } catch (err: any) {
       console.error(err);
-      setError(`فشل تسجيل الدخول بجوجل: ${err.message || err}`);
+      const msg = err?.message || String(err);
+      if (msg.includes('auth/popup-blocked') || msg.includes('popup_blocked_by_browser')) {
+        setError('تنبيه: تم حظر النافذة المنبثقة! يرجى السماح بالنوافذ المنبثقة في إعدادات متصفحك لهذا الموقع، أو جرب فتح التطبيق في علامة تبويب جديدة مستقلة.');
+      } else if (msg.includes('auth/network-request-failed') || msg.includes('auth/internal-error') || window.self !== window.top) {
+        setError('فشل الاتصال الآمن بـ Google. يحدث هذا غالباً بسبب قيود إطار المعاينة (Iframe) أو تفعيل حظر كوكيز الطرف الثالث بالمتصفح. يُنصح بشدة بالنقر فوق زر "فتح التطبيق في نافذة جديدة" بالأسفل وتجربة تسجيل الدخول ثانيةً، أو استخدام تسجيل الدخول بالبريد الإلكتروني.');
+      } else {
+        setError(`فشل تسجيل الدخول بجوجل: ${err.message || err}. يرجى محاولة فتح التطبيق في علامة تبويب مستقلة.`);
+      }
     }
   };
 
@@ -313,6 +322,30 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
         {/* Auth Interface */}
         <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-xl space-y-6">
           
+          {/* Iframe Notice for Google Login troubleshooting */}
+          {isInIframe && (
+            <motion.div 
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3.5 bg-amber-50/80 border border-amber-200/60 rounded-2xl text-amber-850 text-[11px] font-bold text-right flex flex-col gap-2.5 shadow-sm"
+              dir="rtl"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600 animate-pulse" />
+                <span className="leading-relaxed">
+                  تنبيه المعاينة: نظرًا لسياسات أمان المتصفح الصارمة داخل الإطارات (iFrames)، قد يفشل تسجيل الدخول باستخدام Google. يرجى فتح التطبيق في علامة تبويب جديدة مستقلة للمزامنة بنجاح.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="self-start px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl transition text-[10px] font-black flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-600/10"
+              >
+                <span>فتح التطبيق في نافذة مستقلة 🌍</span>
+              </button>
+            </motion.div>
+          )}
+
           {/* Tabs Selector */}
           <div className="grid grid-cols-2 p-1 bg-slate-50 border border-slate-200/50 rounded-2xl">
             <button
