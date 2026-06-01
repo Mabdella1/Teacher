@@ -3,11 +3,46 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   UserPlus, LogIn, Lock, GraduationCap, Grid,
   Sparkles, CheckCircle2, ChevronRight, AlertCircle, Laptop, Smartphone,
-  Copy, Check, ExternalLink
+  Copy, Check, ExternalLink, User, BookOpen, ShieldCheck, HelpCircle, Eye, EyeOff,
+  Chrome
 } from 'lucide-react';
-import { COLOR_PRESETS } from '../lib/theme';
+import { COLOR_PRESETS, getPresetColors } from '../lib/theme';
 import { emailSignUp, emailSignIn, googleSignIn, auth } from '../lib/firebaseAuth';
+import { sendEmailVerification } from 'firebase/auth';
 import { saveWorkspaceToCloud, fetchWorkspaceFromCloud } from '../lib/firebaseSync';
+
+// Convert any arbitrary username text (Arabic, spaces, emojis, etc.) into a 100% valid Firebase Auth email
+const convertToSafeEmail = (username: string): string => {
+  const clean = username.trim().toLowerCase();
+  if (clean.includes('@') && clean.includes('.')) {
+    return clean;
+  }
+  
+  let encoded = '';
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (/^[a-z0-9_.-]$/.test(char)) {
+      encoded += char;
+    } else {
+      // Map non-alphanumeric (Arabic, space, emoji, etc) to a safe hex-code string
+      encoded += 'x' + char.charCodeAt(0).toString(16);
+    }
+  }
+
+  if (!encoded) {
+    encoded = 'user';
+  }
+  
+  if (!/^[a-z0-9]/.test(encoded)) {
+    encoded = 'u' + encoded;
+  }
+  
+  if (encoded.length > 55) {
+    encoded = encoded.slice(0, 55);
+  }
+  
+  return `${encoded}@teacher.app`;
+};
 
 interface LockScreenProps {
   onLogin: (account: { username: string; fullName: string; subject: string; primaryColor?: string; userId: string }) => void;
@@ -16,35 +51,38 @@ interface LockScreenProps {
   onUnlock?: () => void;
 }
 
-export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockScreenProps) {
+export default function LockScreen({ onLogin }: LockScreenProps) {
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   
   // Registration States
   const [regFullName, setRegFullName] = useState('');
   const [regSubject, setRegSubject] = useState('');
+  const [regEmail, setRegEmail] = useState('');
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regColor, setRegColor] = useState('indigo');
+  const [regColor, setRegColor] = useState('blue');
   const [regMigrateData, setRegMigrateData] = useState(true);
 
   // Login States
-  const [loginUsername, setLoginUsername] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // General App/Interface States
+  // UI Utilities
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  // PWA Installer State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [isInIframe, setIsInIframe] = useState(false);
-  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
-  const [copiedDomain, setCopiedDomain] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  // Suggested clean handle in real-time
+  const getCleanPreviewHandle = (input: string) => {
+    if (!input) return '';
+    const clean = input.trim().toLowerCase().replace(/\s+/g, '-');
+    return clean;
+  };
 
   // Check if PWA is already running as standalone or installed
   useEffect(() => {
-    setIsInIframe(window.self !== window.top);
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsInstalled(true);
     }
@@ -78,27 +116,35 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
     setError('');
     setSuccess('');
 
-    if (!regFullName.trim() || !regSubject.trim() || !regUsername.trim() || !regPassword.trim()) {
-      setError('الرجاء تعبئة كافة الحقول المطلوبة لإنشاء حسابك.');
+    const emailToUse = regEmail.trim();
+    const rawUsername = regUsername.trim();
+    if (!regFullName.trim() || !regSubject.trim() || !emailToUse || !rawUsername || !regPassword.trim()) {
+      setError('الرجاء تعبئة كافة الحقول المطلوبة لإنشاء حسابك الجديد.');
       return;
     }
 
-    if (!regUsername.includes('@')) {
-      setError('يرجى كتابة بريد إلكتروني صحيح لتفعيل الحفظ والمزامنة السحابية (مثال: teacher@example.com).');
+    if (!emailToUse.includes('@') || !emailToUse.includes('.')) {
+      setError('الرجاء كتابة بريد إلكتروني صحيح لتلقي رابط تفعيل الحساب.');
       return;
     }
 
     if (regPassword.length < 6) {
-      setError('يجب أن تتكون كلمة المرور من 6 خانات على الأقل لتسجيلها بشكل آمن مسموح.');
+      setError('يجب أن تتكون كلمة المرور من 6 خانات أو أكثر لتأمين حسابك بشكل قوي.');
       return;
     }
 
     try {
-      setSuccess('جاري إنشاء الحساب السحابي وتثبيت قاعدة البيانات... ⏳');
-      // Sign up inside Firebase Authentication
-      const firebaseUser = await emailSignUp(regUsername.trim(), regPassword.trim(), regFullName.trim());
+      setSuccess('جاري إنشاء مساحتك السحابية الآمنة وتثبيت قاعدة البيانات... ⏳');
+      const firebaseUser = await emailSignUp(emailToUse, regPassword.trim(), regFullName.trim());
 
-      // Prepare workspace data payload (and optionally migrate local data)
+      // Send verification email
+      try {
+        await sendEmailVerification(firebaseUser);
+      } catch (verificationError) {
+        console.error("Verification email failed: ", verificationError);
+      }
+
+      // Prepare local storage data for migration if requested
       let studentsList = [];
       let appointmentsList = [];
       let examsList = [];
@@ -112,11 +158,11 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
           if (localApps) appointmentsList = JSON.parse(localApps);
           if (localExams) examsList = JSON.parse(localExams);
         } catch (e) {
-          console.error("Local migration parse skew: ", e);
+          console.error("Local migration error: ", e);
         }
       }
 
-      // Save initial setup in Cloud Firestore
+      // Save workspace record
       await saveWorkspaceToCloud(firebaseUser.uid, {
         teacherName: regFullName.trim(),
         subject: regSubject.trim(),
@@ -124,32 +170,32 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
         passcode: regPassword.slice(0, 8),
         primaryColor: regColor,
         enableWhatsApp24hReminders: true,
-        autoBackupDownloadInterval: 'disabled',
+        autoBackupDownloadInterval: 'daily',
         students: studentsList,
         appointments: appointmentsList,
         examAppointments: examsList,
       });
 
-      setSuccess('تم إنشاء الحساب السحابي وتفعيل الحفظ التلقائي بنجاح! 🚀');
+      setSuccess('مبارك! تم إنشاء الحساب السحابي بنجاح وإرسال رابط التفعيل لبريدك الإلكتروني! ✉️ يرجى تفقد Inbox أو البريد المزعج (Spam) لتنشيط الحساب.');
       
       setTimeout(() => {
         onLogin({
-          username: regUsername.trim().toLowerCase(),
+          username: rawUsername,
           fullName: regFullName.trim(),
           subject: regSubject.trim(),
           primaryColor: regColor,
           userId: firebaseUser.uid
         });
-      }, 1200);
+      }, 2000);
 
     } catch (err: any) {
       console.error(err);
       if (err.message && err.message.includes('auth/email-already-in-use')) {
-        setError('هذا البريد الإلكتروني مسجل بالفعل! يرجى تسجيل الدخول بدلاً من ذلك أو استرجاعه.');
-      } else if (err.message && err.message.includes('auth/operation-not-allowed')) {
-        setError('يرجى التأكد من تمويل موفر تسجيل الدخول البريد والرمز (Email/Password) في إعدادات مشروع Firebase.');
+        setError('البريد الإلكتروني هذا مسجل بالفعل! يرجى اختيار بريد آخر أو الانتقال لتبويب "تسجيل الدخول".');
+      } else if (err.message && (err.message.includes('auth/operation-not-allowed') || err.message.includes('operation-not-allowed'))) {
+        setError('⚠️ المزامنة السحابية مغطاة بخاصية مقفلة! الرجاء تفعيل حقل الدخول بالبريد/الرقم السري (Email/Password) في إعدادات كونسول Firebase Authentication.');
       } else {
-        setError(`فشل إنشاء الحساب السحابي: ${err.message || err}`);
+        setError(`فشل عملية التسجيل: ${err.message || 'يرجى التحقق من اتصالك بالشبكة وإعادة المحاولة.'}`);
       }
     }
   };
@@ -159,20 +205,22 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
     setError('');
     setSuccess('');
 
-    if (!loginUsername.trim() || !loginPassword.trim()) {
-      setError('الرجاء إدخال البريد الإلكتروني وكلمة المرور لمتابعة الدخول.');
+    const inputEmail = loginEmail.trim();
+    if (!inputEmail || !loginPassword.trim()) {
+      setError('الرجاء إدخال البريد الإلكتروني وكلمة المرور للدخول.');
       return;
     }
 
     try {
-      setSuccess('جاري التحقق الفوري والربط السحابي... 🔐');
-      const firebaseUser = await emailSignIn(loginUsername.trim(), loginPassword.trim());
+      setSuccess('جاري التحقق والمزامنة وتأمين الاتصال السحابي... 🔐');
+      const emailToUse = inputEmail.includes('@') ? inputEmail : convertToSafeEmail(inputEmail);
+      const firebaseUser = await emailSignIn(emailToUse, loginPassword.trim());
 
-      setSuccess('تم تسجيل الدخول! جاري مزامنة وسحب البيانات... 📥');
+      setSuccess('تم التحقق بنجاح! جاري تحميل وتحديث بياناتك السحابية... 📥');
       const cloudData = await fetchWorkspaceFromCloud(firebaseUser.uid);
 
       if (cloudData) {
-        // Save cloud workspace to local storage to sync offline instance
+        // Hydrate local database cache
         localStorage.setItem('teacherStudents', JSON.stringify(cloudData.students || []));
         localStorage.setItem('teacherAppointments', JSON.stringify(cloudData.appointments || []));
         localStorage.setItem('teacherExamAppointments', JSON.stringify(cloudData.examAppointments || []));
@@ -182,60 +230,64 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
           subject: cloudData.subject,
           currency: cloudData.currency || 'ج.م',
           passcode: cloudData.passcode || '',
-          primaryColor: cloudData.primaryColor || 'indigo',
+          primaryColor: cloudData.primaryColor || 'blue',
           enableWhatsApp24hReminders: cloudData.enableWhatsApp24hReminders !== false,
-          autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'disabled'
+          autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'daily'
         };
         localStorage.setItem('teacherPreferences', JSON.stringify(nextPrefs));
 
-        setSuccess(`أهلاً بك مجدداً أستاذ ${cloudData.teacherName}! تم تحميل البيانات السحابية بنجاح ⚡`);
+        setSuccess(`مرحباً بك أستاذ ${cloudData.teacherName}! تم تحميل مساحتك بالكامل بنجاح ⚡`);
         
         setTimeout(() => {
           onLogin({
-            username: loginUsername.trim().toLowerCase(),
+            username: inputEmail.split('@')[0],
             fullName: cloudData.teacherName,
             subject: cloudData.subject,
             primaryColor: cloudData.primaryColor,
             userId: firebaseUser.uid
           });
-        }, 1200);
+        }, 1500);
       } else {
-        // First log-in but no cloud document exists, setup a default one
-        setSuccess('تم تسجيل الدخول! جاري تفعيل المزامنة السحابية الأولى لك... 🌱');
+        setSuccess('تم الدخول! جاري تهيئة الحفظ التلقائي لمساحتك الجديدة... 🌱');
         setTimeout(() => {
           onLogin({
-            username: loginUsername.trim().toLowerCase(),
+            username: inputEmail.split('@')[0],
             fullName: firebaseUser.displayName || 'المعلم الفاضل',
             subject: 'المادة الدراسية',
-            primaryColor: 'indigo',
+            primaryColor: 'blue',
             userId: firebaseUser.uid
           });
-        }, 1200);
+        }, 1500);
       }
 
     } catch (err: any) {
       console.error(err);
       if (err.message && (err.message.includes('auth/invalid-credential') || err.message.includes('auth/user-not-found') || err.message.includes('auth/wrong-password'))) {
-        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة! يرجى إعادة التحقق للمحاولة مرة أخرى.');
+        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة! يرجى إعادة التحقق ثم المحاولة مرة أخرى.');
+      } else if (err.message && (err.message.includes('auth/operation-not-allowed') || err.message.includes('operation-not-allowed'))) {
+        setError('⚠️ المزامنة السحابية مقفلة! الرجاء تفعيل موفر الدخول بالبريد والرمز (Email/Password) في منصة Firebase Auth.');
       } else {
-        setError(`فشل تسجيل الدخول: ${err.message || err}`);
+        setError(`فشل عملية تسجيل الدخول: ${err.message || 'يرجى التحقق من اتصالك بالإنترنت والعودة لاحقاً.'}`);
       }
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleSignIn = async () => {
     setError('');
     setSuccess('');
     try {
-      setSuccess('جاري الاتصال السحابي الآمن بجوجل... 🌍');
-      const result = await googleSignIn();
-      if (!result) return;
-
-      const { user } = result;
-      setSuccess('تم التحقق بجوجل بنجاح! جاري سحب البيانات... 📥');
-      const cloudData = await fetchWorkspaceFromCloud(user.uid);
-
+      setSuccess('جاري الاتصال بحساب Google وتأمين الدخول... 🔐');
+      const googleResult = await googleSignIn();
+      if (!googleResult) {
+        throw new Error('العملية ألغيت');
+      }
+      const { user: firebaseUser } = googleResult;
+      
+      setSuccess('تم التحقق بنجاح! جاري مزامنة بياناتك وتحميل اللوحة... 📥');
+      const cloudData = await fetchWorkspaceFromCloud(firebaseUser.uid);
+      
       if (cloudData) {
+        // Hydrate local database cache
         localStorage.setItem('teacherStudents', JSON.stringify(cloudData.students || []));
         localStorage.setItem('teacherAppointments', JSON.stringify(cloudData.appointments || []));
         localStorage.setItem('teacherExamAppointments', JSON.stringify(cloudData.examAppointments || []));
@@ -245,198 +297,121 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
           subject: cloudData.subject,
           currency: cloudData.currency || 'ج.م',
           passcode: cloudData.passcode || '',
-          primaryColor: cloudData.primaryColor || 'indigo',
+          primaryColor: cloudData.primaryColor || 'blue',
           enableWhatsApp24hReminders: cloudData.enableWhatsApp24hReminders !== false,
-          autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'disabled'
+          autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'daily'
         };
         localStorage.setItem('teacherPreferences', JSON.stringify(nextPrefs));
 
-        setSuccess(`أهلاً بك أستاذ ${cloudData.teacherName}! تم المزامنة والربط تماماً ⚡`);
+        setSuccess(`مرحباً بك أستاذ ${cloudData.teacherName}! تم تحميل مساحتك بالكامل بنجاح ⚡`);
+        
         setTimeout(() => {
           onLogin({
-            username: user.email || 'google_user',
+            username: firebaseUser.email?.split('@')[0] || 'teacher',
             fullName: cloudData.teacherName,
             subject: cloudData.subject,
             primaryColor: cloudData.primaryColor,
-            userId: user.uid
+            userId: firebaseUser.uid
           });
-        }, 1200);
+        }, 1500);
       } else {
-        setSuccess('تم التسجيل! جاري تهيئة مساحتك السحابية الجديدة... 🎉');
-        
-        const defaultName = user.displayName || 'أستاذ معلم';
-        const defaultSubject = 'مادة دراسية';
-        
-        await saveWorkspaceToCloud(user.uid, {
-          teacherName: defaultName,
+        // Prepare local storage data for migration
+        let studentsList = [];
+        let appointmentsList = [];
+        let examsList = [];
+
+        const localStudents = localStorage.getItem('teacherStudents');
+        const localApps = localStorage.getItem('teacherAppointments');
+        const localExams = localStorage.getItem('teacherExamAppointments');
+        try {
+          if (localStudents) studentsList = JSON.parse(localStudents);
+          if (localApps) appointmentsList = JSON.parse(localApps);
+          if (localExams) examsList = JSON.parse(localExams);
+        } catch (e) {
+          console.error("Local migration error: ", e);
+        }
+
+        const fullName = firebaseUser.displayName || 'المعلم الفاضل';
+        const defaultSubject = 'المادة الدراسية';
+
+        // Save workspace record
+        await saveWorkspaceToCloud(firebaseUser.uid, {
+          teacherName: fullName,
           subject: defaultSubject,
           currency: 'ج.م',
-          passcode: '',
-          primaryColor: 'indigo',
+          passcode: '123456',
+          primaryColor: 'blue',
           enableWhatsApp24hReminders: true,
-          autoBackupDownloadInterval: 'disabled',
-          students: [],
-          appointments: [],
-          examAppointments: [],
+          autoBackupDownloadInterval: 'daily',
+          students: studentsList,
+          appointments: appointmentsList,
+          examAppointments: examsList,
         });
 
+        setSuccess('تم تهيئة مساحتك السحابية الجديدة ومزامنتها بنجاح! 🎉');
+        
         setTimeout(() => {
           onLogin({
-            username: user.email || 'google_user',
-            fullName: defaultName,
+            username: firebaseUser.email?.split('@')[0] || 'teacher',
+            fullName: fullName,
             subject: defaultSubject,
-            primaryColor: 'indigo',
-            userId: user.uid
+            primaryColor: 'blue',
+            userId: firebaseUser.uid
           });
-        }, 1200);
+        }, 1500);
       }
     } catch (err: any) {
       console.error(err);
-      const msg = err?.message || String(err);
-      if (msg.includes('auth/popup-blocked') || msg.includes('popup_blocked_by_browser')) {
-        setError('تنبيه: تم حظر النافذة المنبثقة! يرجى السماح بالنوافذ المنبثقة في إعدادات متصفحك لهذا الموقع، أو جرب فتح التطبيق في علامة تبويب جديدة مستقلة.');
-      } else if (msg.includes('auth/unauthorized-domain') || msg.includes('unauthorized-domain')) {
-        const currentDomain = window.location.hostname;
-        setUnauthorizedDomain(currentDomain);
-        setError('');
-      } else if (msg.includes('auth/network-request-failed') || msg.includes('auth/internal-error') || window.self !== window.top) {
-        setError('فشل الاتصال الآمن بـ Google. يحدث هذا غالباً بسبب قيود إطار المعاينة (Iframe) أو تفعيل حظر كوكيز الطرف الثالث بالمتصفح. يُنصح بشدة بالنقر فوق زر "فتح التطبيق في نافذة جديدة" بالأسفل وتجربة تسجيل الدخول ثانيةً، أو استخدام تسجيل الدخول بالبريد الإلكتروني.');
+      if (err.message && err.message.includes('auth/popup-closed-by-user')) {
+        setError('تم إغلاق نافذة تسجيل الدخول من Google قبل إكمال العملية.');
       } else {
-        setError(`فشل تسجيل الدخول بجوجل: ${err.message || err}. يرجى محاولة فتح التطبيق في علامة تبويب مستقلة.`);
+        setError(`فشل تسجيل الدخول بواسطة Google: ${err.message || 'يرجى المحاولة مرة أخرى.'}`);
       }
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 relative overflow-y-auto font-sans">
-      {/* Visual glowing backdrops for top fidelity layout */}
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="w-full max-w-md space-y-5 relative z-10 py-6">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-y-auto overflow-x-hidden w-full max-w-full font-sans select-none">
+      <div className="w-full max-w-md space-y-6 relative z-10 py-8">
         
-        {/* Upper Brand Badge and App Titles */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2.5 bg-gradient-to-tr from-indigo-600 via-blue-600 to-sky-600 p-2.5 rounded-2.5xl shadow-lg shadow-blue-500/10 hover:rotate-2 transition-all">
-            <GraduationCap size={28} className="text-white" />
+        {/* Upper Brand Badge and App Header Card */}
+        <div className="text-center space-y-3">
+          <div className="inline-block relative">
+            <img 
+              src="/app_icon.png" 
+              alt="شعار التطبيق" 
+              referrerPolicy="no-referrer"
+              className="w-20 h-20 md:w-24 md:h-24 rounded-3xl shadow-md border-2 border-white/90 relative z-10 mx-auto transform hover:rotate-3 transition duration-300"
+            />
           </div>
-          <div>
-            <h2 className="text-xl font-black text-slate-900 tracking-tight">نظام الحسابات الذكي للمعلم</h2>
-            <p className="text-xs text-slate-405 font-bold mt-1">سجل حضور طلابك، مدفوعات الأقساط والمستندات سحابياً</p>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-1.5 font-sans">
+              <span>برنامج المعلم</span>
+              <span className="text-[11px] bg-blue-600 text-white font-extrabold px-2 py-0.5 rounded-full shadow-sm shadow-blue-600/10">سحابي</span>
+            </h2>
+            <p className="text-xs text-slate-500 font-bold max-w-sm mx-auto leading-relaxed">
+              منظم المواعيد المالي والأكاديمي المتكامل لإدارة الحصص، المستحقات المالية وحضور ومستويات الطلاب
+            </p>
           </div>
         </div>
 
-        {/* Auth Interface */}
-        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-xl space-y-6">
+        {/* Auth Box Container */}
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 shadow-lg space-y-6">
           
-          {/* Iframe Notice for Google Login troubleshooting */}
-          {isInIframe && (
-            <motion.div 
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-3.5 bg-amber-50/80 border border-amber-200/60 rounded-2xl text-amber-850 text-[11px] font-bold text-right flex flex-col gap-2.5 shadow-sm"
-              dir="rtl"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600 animate-pulse" />
-                <span className="leading-relaxed">
-                  تنبيه المعاينة: نظرًا لسياسات أمان المتصفح الصارمة داخل الإطارات (iFrames)، قد يفشل تسجيل الدخول باستخدام Google. يرجى فتح التطبيق في علامة تبويب جديدة مستقلة للمزامنة بنجاح.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => window.open(window.location.href, '_blank')}
-                className="self-start px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl transition text-[10px] font-black flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-600/10"
-              >
-                <span>فتح التطبيق في نافذة مستقلة 🌍</span>
-              </button>
-            </motion.div>
-          )}
+          {/* Custom Slider Tab Selector */}
+          <div className="relative grid grid-cols-2 p-1 bg-slate-100 rounded-2xl border border-slate-200/40">
+            {/* Animated Slider Pill */}
+            <div className="absolute top-1 bottom-1 p-0.5 w-[50%] transition-transform duration-300 ease-out" style={{
+              transform: activeTab === 'register' ? 'translateX(-100%)' : 'translateX(0%)',
+              right: 4
+            }}>
+              <div className="w-full h-full bg-white rounded-xl shadow-md border border-slate-200/50" />
+            </div>
 
-          {/* Unauthorized Domain Interactive Solution Card */}
-          {unauthorizedDomain && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-right flex flex-col gap-3 shadow-md border-r-4 border-r-rose-500"
-              dir="rtl"
-            >
-              <div className="flex items-start gap-2.5">
-                <AlertCircle size={18} className="text-rose-600 mt-0.5 shrink-0" />
-                <div>
-                  <h4 className="text-xs font-black text-rose-950">تفعيل الدخول السحابي بجوجل (خطوة مطلوبة)</h4>
-                  <p className="text-[11px] text-rose-800 leading-relaxed mt-1 font-bold">
-                    لقد قمت بتصميم وبرمجة التطبيق ومزامنة السحابة بنجاح! كوني مساعد ذكاء اصطناعي (AI)، <strong>لا أملك صلاحيات تعديل حسابك الشخصي</strong> في جوجل أو Firebase لإضافة نطاقاتك تلقائياً. يرجى القيام بهذه الخطوة البسيطة والسريعة لتفعيل الدخول المباشر بجوجل:
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 1: Copy Domain */}
-              <div className="bg-white border border-rose-100 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-sm">
-                <span className="font-mono text-xs text-slate-800 select-all font-semibold overflow-x-auto whitespace-nowrap max-w-[200px]" dir="ltr">
-                  {unauthorizedDomain}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(unauthorizedDomain);
-                    setCopiedDomain(true);
-                    setTimeout(() => setCopiedDomain(false), 2000);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 ${
-                    copiedDomain 
-                      ? 'bg-emerald-600 text-white shadow-sm' 
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {copiedDomain ? (
-                    <>
-                      <Check size={11} />
-                      <span>تم النسخ!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={11} />
-                      <span>نسخ النطاق</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Step 2: Open Firebase link */}
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href="https://console.firebase.google.com/project/inductive-rigging-q5xj8/authentication/providers"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 active:scale-[0.98] transition-all text-white font-black text-[11px] rounded-xl flex items-center justify-center gap-1.5 shadow-sm shadow-rose-600/10 cursor-pointer"
-                >
-                  <ExternalLink size={12} />
-                  <span>انتقل إلى إعدادات Firebase 🚀</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setUnauthorizedDomain(null)}
-                  className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[11px] rounded-xl transition cursor-pointer"
-                >
-                  إغلاق
-                </button>
-              </div>
-
-              <div className="text-[10px] text-rose-700/85 leading-normal bg-rose-100/30 rounded-lg p-2 font-bold" dir="rtl">
-                💡 <strong>طريقة التفعيل:</strong> بمجرد فتح الرابط، انزل لأسفل الصفحة لقسم <strong>Authorized Domains (النطاقات المعتمدة)</strong>، اضغط <strong>Add Domain</strong> ثم الصق النطاق المنسوخ واضغط <strong>Save</strong>. سيشتغل الدخول بجوجل مباشرة!
-              </div>
-            </motion.div>
-          )}
-
-          {/* Tabs Selector */}
-          <div className="grid grid-cols-2 p-1 bg-slate-50 border border-slate-200/50 rounded-2xl">
             <button
               onClick={() => { setActiveTab('login'); setError(''); setSuccess(''); }}
-              className={`py-3 rounded-xl text-xs font-black transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'login'
-                  ? 'bg-white text-indigo-605 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
+              className={`relative z-10 py-3 text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                activeTab === 'login' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <LogIn size={15} />
@@ -444,10 +419,8 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
             </button>
             <button
               onClick={() => { setActiveTab('register'); setError(''); setSuccess(''); }}
-              className={`py-3 rounded-xl text-xs font-black transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'register'
-                  ? 'bg-white text-indigo-605 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
+              className={`relative z-10 py-3 text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                activeTab === 'register' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <UserPlus size={15} />
@@ -455,235 +428,319 @@ export default function LockScreen({ onLogin, storedPasscode, onUnlock }: LockSc
             </button>
           </div>
 
-          {/* Quick Alert notification block */}
-          {error && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-3 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[11px] font-bold text-right flex items-start gap-2"
-            >
-              <AlertCircle size={14} className="mt-0.5 shrink-0" />
-              <span>{error}</span>
-            </motion.div>
-          )}
+          {/* Success / Error Toast Banners */}
+          <AnimatePresence mode="wait">
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="p-3.5 bg-rose-50 border border-rose-100/80 rounded-2xl text-rose-700 text-xs font-bold text-right flex items-start gap-2.5 shadow-sm"
+              >
+                <AlertCircle size={15} className="mt-0.5 shrink-0 text-rose-600" />
+                <span className="leading-relaxed">{error}</span>
+              </motion.div>
+            )}
 
-          {success && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-emerald-600 text-[11px] font-bold text-right flex items-start gap-2"
-            >
-              <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-              <span>{success}</span>
-            </motion.div>
-          )}
+            {success && (
+              <motion.div 
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="p-3.5 bg-emerald-50 border border-emerald-100/80 rounded-2xl text-emerald-800 text-xs font-bold text-right flex items-start gap-2.5 shadow-sm"
+              >
+                <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600 animate-pulse" />
+                <span className="leading-relaxed">{success}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {/* Main Tab Panels */}
+          {/* Tab Panel Forms */}
           <AnimatePresence mode="wait">
             {activeTab === 'login' ? (
               <motion.form 
-                key="login-form"
+                key="login-view"
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 10 }}
-                onSubmit={handleLogin} 
+                onSubmit={handleLogin}
                 className="space-y-4 text-right"
               >
-                <div className="space-y-3.5">
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">البريد الإلكتروني السحابي</label>
+                    <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <User size={13} className="text-slate-400" />
+                      <span>البريد الإلكتروني</span>
+                    </label>
                     <input
                       type="email"
                       required
-                      placeholder="أدخل بريدك الإلكتروني المعتمد"
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                      placeholder="أدخل بريدك الإلكتروني (مثل: teacher@example.com)"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all font-sans"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">كلمة المرور</label>
+                    <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <Lock size={13} className="text-slate-400" />
+                      <span>كلمة المرور</span>
+                    </label>
                     <div className="relative">
                       <input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         required
                         placeholder="أدخل كلمة مرور الحساب"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
-                        className="w-full text-right px-4 py-3 pb-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
+                        className="w-full text-right pl-11 pr-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all font-sans"
                       />
-                      <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 focus:outline-none p-1 rounded-lg"
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs transition duration-200 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center justify-center gap-2 mt-2"
-                >
-                  <LogIn size={15} />
-                  <span>تسجيل الدخول ومزامنة السحابة</span>
-                </button>
-
-                {/* Separator */}
-                <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-slate-100"></div>
-                  <span className="flex-shrink mx-4 text-slate-400 text-[10px] font-bold">أو تسجيل سريع</span>
-                  <div className="flex-grow border-t border-slate-100"></div>
+                <div className="text-[10px] text-slate-400 font-bold bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center leading-relaxed">
+                  🔒 جميع بياناتك وفواتير وحضور ومستويات الطلاب مشفرة سحابياً بالكامل لتأمين خصوصيتك المطلقة.
                 </div>
 
-                {/* Google Authentication Button */}
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-2xl font-black text-xs transition-all duration-150 shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 cursor-pointer flex items-center justify-center gap-2 mt-4"
+                >
+                  <LogIn size={15} />
+                  <span>تسجيل الدخول ومزامنة لوحتي ⚡</span>
+                </button>
+
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-3 text-slate-400 font-bold">أو عن طريق</span>
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  onClick={handleGoogleLogin}
-                  className="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-250 hover:border-slate-350 rounded-2xl font-black text-xs transition duration-200 flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={handleGoogleSignIn}
+                  className="w-full py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 active:scale-98 text-slate-700 rounded-2xl font-black text-xs transition-all duration-150 shadow-sm cursor-pointer flex items-center justify-center gap-2.5"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
                   </svg>
-                  <span>الدخول المباشر بحساب Google</span>
+                  <span>تسجيل الدخول بواسطة Google</span>
                 </button>
               </motion.form>
             ) : (
               <motion.form
-                key="register-form"
+                key="register-view"
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -10 }}
                 onSubmit={handleRegister}
                 className="space-y-4 text-right"
               >
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">اسم المعلم</label>
+                    <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <User size={13} className="text-slate-400 animate-pulse" />
+                      <span>اسم المعلم الثنائي</span>
+                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="الأستاذ..."
+                      placeholder="مثل: الأستاذ أحمد"
                       value={regFullName}
                       onChange={(e) => setRegFullName(e.target.value)}
-                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none"
+                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">مادة التدريس</label>
+                    <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <BookOpen size={13} className="text-slate-400" />
+                      <span>المادة الدراسية</span>
+                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="مثل: فيزياء"
+                      placeholder="مثل: اللغة العربية"
                       value={regSubject}
                       onChange={(e) => setRegSubject(e.target.value)}
-                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none"
+                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">البريد الإلكتروني السحابي</label>
+                  <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                    <User size={13} className="text-slate-400" />
+                    <span>البريد الإلكتروني (لتفعيل الحساب)</span>
+                  </label>
                   <input
                     type="email"
                     required
-                    placeholder="سيستخدم لتسجيل دخولك من أي جهاز"
-                    value={regUsername}
-                    onChange={(e) => setRegUsername(e.target.value)}
-                    className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none font-sans"
+                    placeholder="مثال: teacher@gmail.com"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all font-sans"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">كلمة المرور (6 حروف فأكثر)</label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      required
-                      placeholder="أدخل المقاس الآمن للمرور"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-2xl text-xs font-bold focus:outline-none font-sans"
-                    />
-                    <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                  </div>
+                  <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                    <User size={13} className="text-slate-400" />
+                    <span>اسم المستخدم (بالأحرف الفريدة)</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="مثل: ahmed20"
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
+                    className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all font-sans"
+                  />
                 </div>
 
-                {/* Color choices presets */}
                 <div>
-                  <label className="block text-slate-600 font-extrabold text-[11px] mb-1.5 pr-1">اختر لون لوحة التحكم</label>
-                  <div className="flex gap-2 flex-wrap pt-0.5 justify-start">
-                    {Object.keys(COLOR_PRESETS).map((pKey) => (
-                      <button
-                        key={pKey}
-                        type="button"
-                        onClick={() => setRegColor(pKey)}
-                        style={{ backgroundColor: COLOR_PRESETS[pKey].accent }}
-                        className={`w-6 h-6 rounded-full border-2 transition-all cursor-pointer ${
-                          regColor === pKey ? 'border-indigo-650 scale-125 ring-2 ring-indigo-600/20' : 'border-white hover:scale-110'
-                        }`}
-                      />
-                    ))}
+                  <label className="block text-slate-700 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                    <Lock size={13} className="text-slate-400" />
+                    <span>كلمة المرور (6 حروف فأكثر)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="اختر كلمة مرور قوية"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      className="w-full text-right pl-11 pr-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-blue-500 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all font-sans"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 focus:outline-none p-1 rounded-lg"
+                    >
+                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
                   </div>
                 </div>
 
                 {/* Data migration toggle */}
-                <div className="pt-1.5">
-                  <label className="flex items-center gap-2 justify-end select-none cursor-pointer">
-                    <span className="text-[10px] text-slate-500 font-extrabold leading-tight text-right">
-                      ترحيل وربط البيانات الحالية على هذا الجهاز إلى حسابي الجديد
+                <div className="bg-slate-50 border border-slate-205/60 p-3 rounded-2xl">
+                  <label className="flex items-start gap-2.5 justify-end select-none cursor-pointer">
+                    <span className="text-[10.5px] text-slate-500 font-extrabold leading-relaxed text-right">
+                      ترحيل وربط البيانات الحالية على هذا الجهاز تلقائياً إلى حسابي السحابي الجديد
                     </span>
                     <input
                       type="checkbox"
                       checked={regMigrateData}
                       onChange={(e) => setRegMigrateData(e.target.checked)}
-                      className="rounded accent-indigo-600 text-indigo-600 h-4 w-4 shrink-0 cursor-pointer"
+                      className="rounded accent-blue-600 text-blue-600 h-4.5 w-4.5 shrink-0 cursor-pointer mt-0.5 text-center"
                     />
                   </label>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-4 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs transition duration-200 shadow-md shadow-indigo-600/10 cursor-pointer flex items-center justify-center gap-2 mt-2"
+                  className="w-full py-4 px-4 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-2xl font-black text-xs transition-all duration-150 shadow-lg shadow-blue-600/10 hover:shadow-blue-600/20 cursor-pointer flex items-center justify-center gap-2 mt-2"
                 >
                   <UserPlus size={15} />
-                  <span>تأكيد وإنشاء الحساب السحابي</span>
+                  <span>تأكيد وإنشاء حسابي بالكامل 🚀</span>
+                </button>
+
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-3 text-slate-400 font-bold">أو عن طريق</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  className="w-full py-3 px-4 bg-white border border-slate-200 hover:bg-slate-50 active:scale-98 text-slate-700 rounded-2xl font-black text-xs transition-all duration-150 shadow-sm cursor-pointer flex items-center justify-center gap-2.5"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>تسجيل الدخول بواسطة Google</span>
                 </button>
               </motion.form>
             )}
           </AnimatePresence>
         </div>
 
-        {/* PWA App Installation Module with golden cap ledger brand */}
-        <div className="bg-gradient-to-tr from-slate-900 via-indigo-950 to-slate-950 text-white rounded-3xl p-5 shadow-xl border border-indigo-500/20 text-center relative overflow-hidden flex flex-col md:flex-row items-center gap-4 text-right">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 blur-2xl rounded-full pointer-events-none" />
-          
-          <div className="w-14 h-14 bg-indigo-950/80 border border-indigo-800 rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
-            <GraduationCap size={28} className="text-amber-400" />
+        {/* PWA App Installation Minimal Promo Card */}
+        <div className="bg-slate-950 text-white rounded-3xl p-5 shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center gap-4 text-right border border-white/[0.08]">
+          <div className="w-12 h-12 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-center shrink-0 shadow-lg">
+            <Smartphone size={24} className="text-sky-400" />
           </div>
 
           <div className="flex-1 space-y-1">
             <h4 className="text-xs font-black text-slate-100 flex items-center justify-center md:justify-start gap-1">
-              <span>📱</span> تثبيت التطبيق بهويته المميزة الجديدة
+              <span>📱</span> هل ترغب في استخدام التطبيق على شاشة هاتفك؟
             </h4>
-            <p className="text-[10px] text-slate-350 font-semibold leading-relaxed">
-              قم بإضافة اختصار نظام المعلم إلى شاشة هاتفك أو جهازك كمثبت PWA بلمسته الأكاديمية والمالية الراقية.
+            <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+              قم بتثبيت التطبيق وافتحه مباشرة بضغطة زر واحدة كأي تطبيق هاتف بفضل تقنية الـ PWA المتقدمة.
             </p>
           </div>
 
           {!isInstalled && (
             <button
               onClick={handleInstallApp}
-              className="w-full md:w-auto px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-xl font-bold text-xs transition duration-150 shadow-md cursor-pointer text-center whitespace-nowrap"
+              className="w-full md:w-auto px-4 py-2.5 bg-sky-500 hover:bg-sky-600 active:scale-95 text-white rounded-xl font-black text-xs transition duration-150 shadow-md cursor-pointer text-center whitespace-nowrap"
             >
-              تثبيت التطبيق
+              تحميل وتثبيت
             </button>
           )}
         </div>
 
-        {/* Brand signature */}
-        <div className="text-center text-[10px] text-slate-400 font-semibold leading-relaxed">
-          <span>نظام TEACHER المعلم • حماية مدمجة، توافقية، وتشفير سحابي متفوق</span>
+        {/* Brand signature and privacy check */}
+        <div className="space-y-1 text-center">
+          <p className="text-[10px] text-slate-400 font-bold leading-relaxed flex items-center justify-center gap-1.5">
+            <ShieldCheck size={12} className="text-blue-500" />
+            <span>نظام المعلم الذكي • حماية مدمجة، تشفير كامل للأقساط والبيانات السحابية</span>
+          </p>
         </div>
       </div>
     </div>

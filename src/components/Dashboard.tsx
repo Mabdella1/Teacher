@@ -424,7 +424,7 @@ export default function Dashboard({ students, appointments, preferences, onSelec
     <div className="space-y-6 select-none font-sans animate-in fade-in duration-200">
       
       {/* 1. Header Hero Panel */}
-      <div className="bg-gradient-to-br from-indigo-650 via-blue-650 to-indigo-850 text-white rounded-3xl p-6 relative overflow-hidden shadow-xl shadow-blue-500/10 border-0">
+      <div className="bg-primary-gradient text-white rounded-3xl p-6 relative overflow-hidden shadow-xl shadow-blue-500/10 border-0">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -z-10" />
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-350/15 rounded-full blur-3xl -z-10" />
         
@@ -444,7 +444,7 @@ export default function Dashboard({ students, appointments, preferences, onSelec
 
           <div className="bg-white text-slate-900 border border-slate-100 shadow-xl p-3.5 pr-4 rounded-2xl flex items-center gap-4 shrink-0 self-stretch md:self-auto justify-between md:justify-start min-w-[210px]">
             <div className="space-y-0.5 text-right md:pl-2">
-              <span className="text-[10px] text-indigo-600 font-black block tracking-wide">🏆 تاريخ اليوم المعتمد</span>
+              <span className="text-[10px] text-blue-600 font-black block tracking-wide">🏆 تاريخ اليوم المعتمد</span>
               <div className="text-sm sm:text-base font-black text-slate-900 leading-tight">
                 {sysTime.toLocaleDateString('ar-EG', { weekday: 'long' })}
               </div>
@@ -452,8 +452,8 @@ export default function Dashboard({ students, appointments, preferences, onSelec
                 {sysTime.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
               </div>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-650 text-white flex flex-col items-center justify-center shadow-md shadow-indigo-600/10 shrink-0 border border-indigo-400/20 overflow-hidden">
-              <div className="bg-indigo-700/60 w-full text-center py-0.5 text-[8px] font-black uppercase tracking-wider leading-none text-indigo-100">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-b from-blue-500 to-blue-650 text-white flex flex-col items-center justify-center shadow-md shadow-blue-600/10 shrink-0 border border-blue-400/20 overflow-hidden">
+              <div className="bg-blue-700/60 w-full text-center py-0.5 text-[8px] font-black uppercase tracking-wider leading-none text-indigo-100">
                 {sysTime.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
               </div>
               <div className="flex-1 flex items-center justify-center text-white font-black text-sm font-sans leading-none pb-0.5">

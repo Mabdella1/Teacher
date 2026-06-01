@@ -20,8 +20,9 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 const provider = new GoogleAuthProvider();
-// Request Google Calendar scopes
+// Request Google Calendar and Google Drive scopes
 provider.addScope('https://www.googleapis.com/auth/calendar.events');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;

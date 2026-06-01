@@ -1307,7 +1307,7 @@ export default function NotificationCenter({ students, appointments, currency, p
               {/* Drawer footer close button */}
               <div className="border-t border-slate-100 pt-3 mt-3.5 flex justify-between items-center text-[9px] font-mono text-slate-400">
                 <span>تحديث مستمر للبيانات والحصص</span>
-                <span className="font-sans font-semibold text-slate-500">منصة TEACHER v1.2</span>
+                <span className="font-sans font-semibold text-slate-500">منصة TEACHER v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</span>
               </div>
             </motion.div>
           </>

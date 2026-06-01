@@ -855,7 +855,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                               .slice(0, 3)
                               .map((session, sIdx) => (
                                 <div 
-                                  key={session.id} 
+                                  key={session.id || `session-list-${sIdx}-${session.date}`} 
                                   className="flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-100 rounded-xl text-[10px] transition-colors"
                                 >
                                   <div className="flex items-center gap-1.5 truncate">

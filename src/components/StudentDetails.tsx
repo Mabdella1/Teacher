@@ -1763,7 +1763,7 @@ export default function StudentDetails({
                           const isPaid = student.type === 'lesson' ? isSessionPaidMap.get(session.id) : false;
                           return (
                             <tr 
-                              key={session.id} 
+                              key={session.id || `session-row-${idx}-${session.date}`} 
                               className={`transition-colors border-b border-slate-100 ${
                                 student.type === 'lesson' && isPaid 
                                   ? 'bg-emerald-50/50 hover:bg-emerald-100/60 border-r-4 border-emerald-500' 
@@ -1837,7 +1837,7 @@ export default function StudentDetails({
                           const d = new Date(payment.date);
                           const dayLabel = d.toLocaleDateString('ar-EG', { weekday: 'long' });
                           return (
-                            <tr key={payment.id} className="hover:bg-slate-50 transition-colors">
+                            <tr key={payment.id || `payment-row-${idx}`} className="hover:bg-slate-50 transition-colors">
                               <td className="py-3 px-4 text-center font-bold text-slate-500">{student.payments.length - idx}</td>
                               <td className="py-3 px-4 font-bold text-slate-800">
                                 <span>{payment.date}</span>
@@ -3129,7 +3129,7 @@ ${note.content}
                         const d = new Date(session.date);
                         const dayLabel = d.toLocaleDateString('ar-EG', { weekday: 'long' });
                         return (
-                          <tr key={session.id} className="odd:bg-white even:bg-[#f8fafc] hover:bg-indigo-50/20" style={idx % 2 === 1 ? { backgroundColor: '#f8fafc' } : undefined}>
+                          <tr key={session.id || `session-print-${idx}`} className="odd:bg-white even:bg-[#f8fafc] hover:bg-indigo-50/20" style={idx % 2 === 1 ? { backgroundColor: '#f8fafc' } : undefined}>
                             <td className="py-2 px-3 text-center border border-slate-300 font-semibold">{student.sessions.length - idx}</td>
                             <td className="py-2 px-3 border border-slate-300 font-bold">{session.date} <span className="text-[9px] text-slate-500 font-normal">({dayLabel})</span></td>
                             <td className="py-2 px-3 border border-slate-300 font-medium text-left font-mono" dir="ltr">{formatTimeTo12h(session.time)}</td>
@@ -3178,7 +3178,7 @@ ${note.content}
                         const d = new Date(payment.date);
                         const dayLabel = d.toLocaleDateString('ar-EG', { weekday: 'long' });
                         return (
-                          <tr key={payment.id} className="odd:bg-white even:bg-[#f8fafc] hover:bg-emerald-50/20" style={idx % 2 === 1 ? { backgroundColor: '#f8fafc' } : undefined}>
+                          <tr key={payment.id || `payment-print-${idx}`} className="odd:bg-white even:bg-[#f8fafc] hover:bg-emerald-50/20" style={idx % 2 === 1 ? { backgroundColor: '#f8fafc' } : undefined}>
                             <td className="py-2 px-3 text-center border border-slate-300 font-semibold">{student.payments.length - idx}</td>
                             <td className="py-2 px-3 border border-slate-300 font-bold">{payment.date} <span className="text-[9px] text-slate-500 font-normal">({dayLabel})</span></td>
                             <td className="py-2 px-3 border border-slate-300 font-black text-emerald-600 font-mono">{payment.amount} {currency}</td>

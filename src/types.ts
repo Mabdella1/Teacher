@@ -84,6 +84,7 @@ export interface TeacherPreferences {
   enableWhatsApp24hReminders?: boolean; // toggle for automated 24h WhatsApp session ready reminder
   autoBackupDownloadInterval?: 'daily' | 'weekly' | 'monthly' | 'disabled'; // auto backup download frequency
   lastAutoBackupDownloadDate?: string; // YYYY-MM-DD date when the last download took place
+  lastGoogleDriveBackupDate?: string; // YYYY-MM-DD date when the last Google Drive backup took place
   hideAIAnalysis?: boolean; // toggle to hide Gemini AI feature from the UI
   hideGoogleCalendar?: boolean; // toggle to hide Google Calendar feature from the UI
 }

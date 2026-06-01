@@ -15,8 +15,9 @@ import {
   Cloud, CloudLightning, CloudOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { initAuth, logout } from './lib/firebaseAuth';
+import { initAuth, logout, getAccessToken } from './lib/firebaseAuth';
 import { saveWorkspaceToCloud, fetchWorkspaceFromCloud } from './lib/firebaseSync';
+import { triggerDailyGoogleDriveBackupIfNeeded, uploadBackupToGoogleDrive } from './lib/googleDriveSync';
 
 // Default initial state
 const DEFAULT_PREFERENCES: TeacherPreferences = {
@@ -25,7 +26,7 @@ const DEFAULT_PREFERENCES: TeacherPreferences = {
   currency: 'ج.م',
   passcode: '', // Guided setup on first load
   enableWhatsApp24hReminders: true,
-  autoBackupDownloadInterval: 'disabled',
+  autoBackupDownloadInterval: 'daily',
 };
 
 const DEFAULT_STUDENTS: Student[] = [
@@ -130,6 +131,10 @@ export default function App() {
   // Cloud Sync States
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [isCloudPullCompleted, setIsCloudPullCompleted] = useState<boolean>(false);
+  const [driveSyncState, setDriveSyncState] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showSyncErrorModal, setShowSyncErrorModal] = useState<boolean>(false);
 
   // Push updates helper
   const pushWorkspaceToCloud = async (
@@ -139,6 +144,11 @@ export default function App() {
     nextApps: Appointment[],
     nextExams: ExamAppointment[]
   ) => {
+    if (userId === "offline_local") {
+      setSyncState('synced');
+      setSyncError(null);
+      return;
+    }
     try {
       setSyncState('syncing');
       await saveWorkspaceToCloud(userId, {
@@ -154,23 +164,76 @@ export default function App() {
         examAppointments: nextExams,
       });
       setSyncState('synced');
+      setSyncError(null);
     } catch (err: any) {
       if (err?.isOffline) {
         console.warn("Auto Sync Push to Cloud paused (Client is offline). State remains intact locally and will sync once connection is restored.");
+        setSyncState('synced');
+        setSyncError(null);
       } else {
         console.error("Auto Sync Push to Cloud Failed:", err);
+        let errorMsg = err?.message || String(err);
+        try {
+          const parsed = JSON.parse(errorMsg);
+          if (parsed.error) errorMsg = parsed.error;
+        } catch(e) {}
+        setSyncError(errorMsg);
+        setSyncState('error');
       }
+    }
+  };
+
+  const triggerManualCloudSync = async () => {
+    if (!currentUserId || currentUserId === "offline_local") return;
+    setSyncState('syncing');
+    setSyncError(null);
+    try {
+      await saveWorkspaceToCloud(currentUserId, {
+        teacherName: preferences.teacherName,
+        subject: preferences.subject,
+        currency: preferences.currency || 'ج.م',
+        passcode: preferences.passcode || '',
+        primaryColor: preferences.primaryColor || 'indigo',
+        enableWhatsApp24hReminders: preferences.enableWhatsApp24hReminders !== false,
+        autoBackupDownloadInterval: preferences.autoBackupDownloadInterval || 'disabled',
+        students,
+        appointments,
+        examAppointments,
+      });
+      setSyncState('synced');
+      setSyncError(null);
+    } catch (err: any) {
+      console.error("[Manual Cloud Sync] Failed:", err);
+      let errorMsg = err?.message || String(err);
+      try {
+        const parsed = JSON.parse(errorMsg);
+        if (parsed.error) errorMsg = parsed.error;
+      } catch(e) {}
+      setSyncError(errorMsg);
       setSyncState('error');
     }
   };
 
   // Auth Listener setup
   useEffect(() => {
+    const isOfflineMode = localStorage.getItem('teacher_offline_mode') === 'true';
+    if (isOfflineMode) {
+      setCurrentUserId("offline_local");
+      setIsLocked(false);
+    }
+
     const unsubscribe = initAuth((user) => {
+      localStorage.removeItem('teacher_offline_mode');
       setCurrentUserId(user.uid);
       setIsLocked(false);
     }, () => {
-      setCurrentUserId(null);
+      const activeOffline = localStorage.getItem('teacher_offline_mode') === 'true';
+      if (!activeOffline) {
+        setCurrentUserId(null);
+      } else {
+        setCurrentUserId("offline_local");
+        setIsLocked(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -180,10 +243,20 @@ export default function App() {
     if (!currentUserId) return;
 
     let isSubscribed = true;
+    setIsCloudPullCompleted(false);
 
     const pullCloudWorkspace = async () => {
+      if (currentUserId === "offline_local") {
+        if (isSubscribed) {
+          setSyncState('synced');
+          setSyncError(null);
+          setIsCloudPullCompleted(true);
+        }
+        return;
+      }
       try {
         setSyncState('syncing');
+        setSyncError(null);
         const cloudData = await fetchWorkspaceFromCloud(currentUserId);
         if (cloudData && isSubscribed) {
           setStudents(cloudData.students || []);
@@ -207,17 +280,30 @@ export default function App() {
           setPreferences(cloudPrefs);
           localStorage.setItem('teacherPreferences', JSON.stringify(cloudPrefs));
           setSyncState('synced');
+          setSyncError(null);
+          setIsCloudPullCompleted(true);
         } else if (!cloudData && isSubscribed) {
           // Newly registered - push default or pre-auth local data as initial cloud document
           await pushWorkspaceToCloud(currentUserId, preferences, students, appointments, examAppointments);
+          setIsCloudPullCompleted(true);
         }
       } catch (err: any) {
         if (err?.isOffline) {
           console.warn("Could not fetch cloud workspace because client is offline. Running securely in offline mode with cached local data.");
+          setIsCloudPullCompleted(true);
+          setSyncState('synced');
+          setSyncError(null);
         } else {
           console.error("Failed to fetch cloud workspace on login:", err);
+          let errorMsg = err?.message || String(err);
+          try {
+            const parsed = JSON.parse(errorMsg);
+            if (parsed.error) errorMsg = parsed.error;
+          } catch(e) {}
+          setSyncError(errorMsg);
+          setSyncState('error');
+          setIsCloudPullCompleted(true);
         }
-        setSyncState('error');
       }
     };
 
@@ -287,22 +373,156 @@ export default function App() {
     }
   }, []);
 
+  // Cloud automatic background synchronization for any state changes (preferences, students, appointments, and exams)
+  useEffect(() => {
+    if (!currentUserId || currentUserId === "offline_local") {
+      setSyncState('synced');
+      setSyncError(null);
+      return;
+    }
+    if (!isCloudPullCompleted) return; // Prevent overwriting cloud data before initial pull completes
+
+    setSyncState('syncing');
+
+    // Debounce cloud sync to group rapid consecutive state changes (like notes typing, checkbox clicks, etc.)
+    const timer = setTimeout(async () => {
+      try {
+        await saveWorkspaceToCloud(currentUserId, {
+          teacherName: preferences.teacherName,
+          subject: preferences.subject,
+          currency: preferences.currency || 'ج.م',
+          passcode: preferences.passcode || '',
+          primaryColor: preferences.primaryColor || 'indigo',
+          enableWhatsApp24hReminders: preferences.enableWhatsApp24hReminders !== false,
+          autoBackupDownloadInterval: preferences.autoBackupDownloadInterval || 'disabled',
+          students,
+          appointments,
+          examAppointments,
+        });
+        setSyncState('synced');
+        setSyncError(null);
+        console.log("[Cloud Auto Sync] Core states synced automatically to Firestore.");
+      } catch (err: any) {
+        if (err?.isOffline) {
+          console.warn("[Cloud Auto Sync] Paused (Offline mode). Local modifications preserved.");
+          setSyncState('synced'); // Remain looking healthy as offline Firestore cache will sync in the background
+          setSyncError(null);
+        } else {
+          console.error("[Cloud Auto Sync] Auto synchronization failed:", err);
+          let errorMsg = err?.message || String(err);
+          try {
+            const parsed = JSON.parse(errorMsg);
+            if (parsed.error) errorMsg = parsed.error;
+          } catch(e) {}
+          setSyncError(errorMsg);
+          setSyncState('error');
+        }
+      }
+    }, 1500); // 1.5s quiet-time debounce
+
+    return () => clearTimeout(timer);
+  }, [
+    currentUserId,
+    isCloudPullCompleted,
+    students,
+    appointments,
+    examAppointments,
+    preferences.teacherName,
+    preferences.subject,
+    preferences.currency,
+    preferences.passcode,
+    preferences.primaryColor,
+    preferences.enableWhatsApp24hReminders,
+    preferences.autoBackupDownloadInterval,
+  ]);
+
+  // Google Drive automated background sync/backup of modifications & daily checkes
+  useEffect(() => {
+    if (!currentUserId || currentUserId === "offline_local") {
+      setDriveSyncState('idle');
+      return;
+    }
+    if (!isCloudPullCompleted) return; // Prevent premature overrides before cloud data load
+
+    const token = getAccessToken();
+    if (!token) {
+      setDriveSyncState('idle');
+      return;
+    }
+
+    // Check configuration. If user chose 'disabled', skip auto sync
+    if (preferences.autoBackupDownloadInterval === 'disabled') {
+      setDriveSyncState('idle');
+      return;
+    }
+
+    setDriveSyncState('syncing');
+
+    // Debounce to group consecutive rapid changes (like typing notes or continuous status changes)
+    const timer = setTimeout(async () => {
+      try {
+        const backupTimeFormatted = await uploadBackupToGoogleDrive(
+          token,
+          preferences,
+          students,
+          appointments
+        );
+        // Save the friendly timestamp
+        localStorage.setItem('teacher_drive_last_backup', backupTimeFormatted);
+        setDriveSyncState('synced');
+        console.log(`[Google Drive Sync] Changes automatically backed up to Google Drive at ${backupTimeFormatted}`);
+      } catch (err) {
+        console.warn('[Google Drive Sync] Live auto-sync failed or skipped:', err);
+        setDriveSyncState('error');
+      }
+    }, 4500); // 4.5 seconds of quiet time triggers the background Google Drive override
+
+    return () => clearTimeout(timer);
+  }, [
+    currentUserId,
+    isCloudPullCompleted,
+    students,
+    appointments,
+    preferences.teacherName,
+    preferences.subject,
+    preferences.currency,
+    preferences.passcode,
+    preferences.primaryColor,
+    preferences.autoBackupDownloadInterval
+  ]);
+
+  const handleManualDriveSync = async () => {
+    const token = getAccessToken();
+    if (!token) {
+      alert("الرجاء ربط حساب Google Drive أولاً من صفحة الإعدادات لتفعيل المزامنة سحابياً! ☁️");
+      return;
+    }
+    try {
+      setDriveSyncState('syncing');
+      const backupTimeFormatted = await uploadBackupToGoogleDrive(
+        token,
+        preferences,
+        students,
+        appointments
+      );
+      localStorage.setItem('teacher_drive_last_backup', backupTimeFormatted);
+      setDriveSyncState('synced');
+    } catch (err) {
+      console.error('[Google Drive Sync] Manual sync failed:', err);
+      setDriveSyncState('error');
+    }
+  };
+
   // Save wrappers
   const savePreferences = (updatedPrefs: Partial<TeacherPreferences>) => {
     const next = { ...preferences, ...updatedPrefs };
     setPreferences(next);
     localStorage.setItem('teacherPreferences', JSON.stringify(next));
-    if (currentUserId) {
-      pushWorkspaceToCloud(currentUserId, next, students, appointments, examAppointments);
-    }
   };
 
   const saveStudents = (newStudents: Student[]) => {
     setStudents(newStudents);
     localStorage.setItem('teacherStudents', JSON.stringify(newStudents));
-    if (currentUserId) {
-      pushWorkspaceToCloud(currentUserId, preferences, newStudents, appointments, examAppointments);
-    }
   };
 
   const saveAppointments = (newAppointments: Appointment[]) => {
@@ -315,9 +535,6 @@ export default function App() {
     });
     setAppointments(pruned);
     localStorage.setItem('teacherAppointments', JSON.stringify(pruned));
-    if (currentUserId) {
-      pushWorkspaceToCloud(currentUserId, preferences, students, pruned, examAppointments);
-    }
   };
 
 
@@ -510,10 +727,6 @@ export default function App() {
 
     const updatedApps = [...appointments, nextExamApp];
     saveAppointments(updatedApps);
-
-    if (currentUserId) {
-      pushWorkspaceToCloud(currentUserId, preferences, students, updatedApps, updatedExams);
-    }
   };
 
   const handleDeleteExamAppointment = (id: string) => {
@@ -523,10 +736,6 @@ export default function App() {
 
     const updatedApps = appointments.filter(app => app.id !== `exam-${id}`);
     saveAppointments(updatedApps);
-
-    if (currentUserId) {
-      pushWorkspaceToCloud(currentUserId, preferences, students, updatedApps, updatedExams);
-    }
   };
 
   // Global Settings import / export
@@ -575,11 +784,8 @@ export default function App() {
     : null;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans transition-all duration-300 relative select-none">
+    <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans transition-all duration-300 relative select-none overflow-x-hidden w-full max-w-full">
       <ThemeStyleInjector primaryColor={preferences.primaryColor} />
-      {/* Background Ambience quiet subtle top light-blue flare */}
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-to-br from-indigo-500/10 via-blue-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 left-10 w-[500px] h-[500px] bg-gradient-to-tr from-sky-500/10 via-indigo-500/5 to-transparent rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Top Header Navigation */}
       <header className="sticky top-0 z-45 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-3 md:px-8 py-2.5 flex items-center justify-between shadow-xs print:hidden select-none">
@@ -625,18 +831,59 @@ export default function App() {
           {/* Cloud Sync Status Indicator */}
           {currentUserId && (
             <div 
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 ${
+              onClick={() => setShowSyncErrorModal(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 cursor-pointer select-none active:scale-95 ${
                 syncState === 'synced'
-                  ? 'bg-emerald-50 border-emerald-155 text-emerald-600'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/15'
                   : syncState === 'syncing'
-                  ? 'bg-indigo-50 border-indigo-155 text-indigo-600 animate-pulse'
-                  : 'bg-rose-50 border-rose-155 text-rose-600 animate-bounce'
+                  ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 animate-pulse hover:bg-indigo-500/15'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-600 animate-bounce hover:bg-rose-500/15'
               }`}
-              title={syncState === 'synced' ? 'تم المزامنة والحفظ سحابياً بنجاح' : syncState === 'syncing' ? 'جاري المزامنة...' : 'عطل مزامنة'}
+              title={syncState === 'synced' ? 'تم المزامنة والحفظ سحابياً بنجاح (اضغط للتفاصيل)' : syncState === 'syncing' ? 'جاري المزامنة...' : 'عطل مزامنة (اضغط لرؤية تفاصيل الخطأ)'}
             >
               <Cloud size={14} className={syncState === 'syncing' ? 'animate-bounce' : ''} />
+              <span>
+                {syncState === 'synced' ? 'مزامنة صحيحة (صح) 🟢' : syncState === 'syncing' ? 'جاري المزامنة...' : 'خطأ اتصال ❌'}
+              </span>
+            </div>
+          )}
+
+          {/* Google Drive Status Indicator */}
+          {currentUserId && currentUserId !== "offline_local" && preferences.autoBackupDownloadInterval !== 'disabled' && (
+            <div 
+              onClick={handleManualDriveSync}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 cursor-pointer select-none active:scale-95 ${
+                driveSyncState === 'synced'
+                  ? 'bg-blue-50 border-blue-150 text-blue-600 animate-none'
+                  : driveSyncState === 'syncing'
+                  ? 'bg-blue-50/50 border-blue-100 text-blue-500 animate-pulse'
+                  : driveSyncState === 'error'
+                  ? 'bg-amber-50 border-amber-200 text-amber-600'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+              }`}
+              title={
+                driveSyncState === 'synced' 
+                  ? 'تم المزامنة والنسخ بنجاح على Google Drive. اضغط لمزامنة يدوية فورية.' 
+                  : driveSyncState === 'syncing' 
+                  ? 'جاري حفظ التعديلات سحابياً وتحديث ملف Drive...' 
+                  : driveSyncState === 'error'
+                  ? 'انتهت الصلاحية أو خطأ مزامنة. اضغط للمحاولة.'
+                  : 'مزامنة Google Drive جاهزة. اضغط للبدء.'
+              }
+            >
+              <svg className={`w-3.5 h-3.5 shrink-0 ${driveSyncState === 'syncing' ? 'animate-spin' : ''}`} viewBox="0 0 24 24">
+                <path fill="#0F9D58" d="M15.43 14.85l-3.43-5.93h6.86z"/>
+                <path fill="#4285F4" d="M12 9l-3.43 5.92h6.86z" transform="rotate(120 12 11)"/>
+                <path fill="#FFBA00" d="M12 9l-3.43 5.92h6.86z" transform="rotate(240 12 11)"/>
+              </svg>
               <span className="hidden md:inline">
-                {syncState === 'synced' ? 'مزامنة سحابية نشطة' : syncState === 'syncing' ? 'جاري المزامنة...' : 'خطأ اتصال'}
+                {driveSyncState === 'synced' 
+                  ? 'محفوظ بـ Drive ☁️' 
+                  : driveSyncState === 'syncing' 
+                  ? 'مزمن بـ Drive...' 
+                  : driveSyncState === 'error'
+                  ? 'فشل مزامنة Drive'
+                  : 'مزامنة تلقائية بـ Drive'}
               </span>
             </div>
           )}
@@ -995,12 +1242,135 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-right">
             <p className="text-slate-550">مساعد تخطيط وإلتحاق ومتابعة شؤون الطلاب الذكي للأستاذ • برنامج Teacher الذكي</p>
             <div className="flex items-center gap-2.5">
-              <span className="bg-slate-200 text-slate-650 border border-slate-300 px-2 py-0.5 rounded font-mono">1.1.0</span>
+              <span className="bg-slate-200 text-slate-650 border border-slate-300 px-2 py-0.5 rounded font-mono">v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</span>
               <p className="text-slate-400 font-semibold text-left">تم التطوير بامتياز بواسطة المُبرمج <span className="text-indigo-600 font-black">Mohamed Abdella</span></p>
             </div>
           </div>
         </footer>
       </div>
+
+      {/* Cloud Diagnostic and Error Information Modal */}
+      <AnimatePresence>
+        {showSyncErrorModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSyncErrorModal(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+            />
+            
+            {/* Modal box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 md:p-8 w-full max-w-lg text-right overflow-hidden font-sans z-10"
+              dir="rtl"
+            >
+              {/* Decorative background gradient */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-blue-500 to-emerald-500" />
+              
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-6">
+                <div className={`p-3 rounded-2xl ${syncState === 'synced' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-650'}`}>
+                  <Cloud size={24} className={syncState === 'syncing' ? 'animate-bounce' : ''} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">تشخيص المزامنة السحابية ☁️</h3>
+                  <p className="text-xs text-slate-500 font-bold mt-0.5">تفاصيل حالة اتصال وحفظ بيانات منصة Teacher</p>
+                </div>
+              </div>
+
+              {/* Body - Case 1: Synced (Success) */}
+              {syncState === 'synced' && (
+                <div className="space-y-4">
+                  <div className="bg-emerald-500/5 border border-emerald-500/15 p-4 rounded-2xl flex items-start gap-3">
+                    <span className="text-xl shrink-0">✅</span>
+                    <div className="text-xs text-emerald-800 leading-relaxed font-bold">
+                      تم مزامنة بيانات الطلاب والحصص والإعدادات مع السحابة الفيدرالية بنجاح تام وبشكل آمن! جميع بياناتك محدثة ولا توجد أي مشاكل مفقودة.
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-slate-500 space-y-2 font-semibold">
+                    <p className="font-extrabold text-slate-700">📌 معلومات نظام الاتصال السحابي:</p>
+                    <div className="bg-slate-50 p-3 rounded-xl space-y-1.5 font-mono text-[11px] text-slate-650">
+                      <div>• معرّف المستخدم الموثق: {currentUserId}</div>
+                      <div>• حالة اتصال الشبكة: متصل (قاعدة بيانات Firestore)</div>
+                      <div>• جودة الاتصال والمزامنة: مستقرة ومؤمنة (المزامنة صحيحة ✅)</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Body - Case 2: Syncing */}
+              {syncState === 'syncing' && (
+                <div className="space-y-4 text-center py-6">
+                  <div className="relative inline-flex h-12 w-12 rounded-full justify-center items-center bg-indigo-50 text-indigo-600 mb-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-20"></span>
+                    <Cloud size={20} className="animate-bounce" />
+                  </div>
+                  <h4 className="text-sm font-extrabold text-indigo-900">جاري الحفظ والتزامن السحابي الآن...</h4>
+                  <p className="text-xs text-slate-500 leading-relaxed px-4">
+                    يرجى الانتظار للحظة، نقوم بتحليل التعديلات لتنظيم وتوثيق السجلات السحابية الجديدة تلقائياً.
+                  </p>
+                </div>
+              )}
+
+              {/* Body - Case 3: Error */}
+              {syncState === 'error' && (
+                <div className="space-y-4">
+                  <div className="bg-rose-500/5 border border-rose-500/15 p-4 rounded-2xl flex items-start gap-3 text-right">
+                    <span className="text-xl shrink-0">⚠️</span>
+                    <div className="text-xs text-rose-800 leading-relaxed font-extrabold">
+                      تم تعليق المزامنة التلقائية. البيانات محفوظة مؤقتاً ومحلياً للعمل بمثالية بدون خسارة، لكن لم نتمكن من الحفظ سحابياً للمبررات الفنية بالأسفل.
+                    </div>
+                  </div>
+
+                  {/* Diagnostic technical error */}
+                  <div className="space-y-1.5 text-right">
+                    <span className="text-[11px] font-bold text-slate-500 block">تفاصيل الخطأ التقني المسترجع (الغلط):</span>
+                    <div className="bg-slate-950 text-rose-400 p-3.5 rounded-xl font-mono text-[11px] leading-relaxed break-all overflow-x-auto max-h-36 border border-slate-800 text-left" dir="ltr">
+                      {syncError || 'Error: Permission Denied or Firestore Database not provisioned.'}
+                    </div>
+                  </div>
+
+                  {/* Common solutions list */}
+                  <div className="space-y-2 text-xs text-slate-650 leading-relaxed font-semibold">
+                    <p className="font-extrabold text-slate-800">🛠️ خطوات سريعة لتجاوز هذا الخلل:</p>
+                    <ul className="list-disc list-inside mr-3 space-y-1 text-slate-600 text-[11px]">
+                      <li>تأكد من إنشاء وتفعيل قاعدة بيانات Firestore بنجاح على مشروع Firebase الخاص بك.</li>
+                      <li>تأكد من وجود وتطبيق قواعد الحماية الصحيحة للـ Database (Security Rules) لتفادي منع الوصول.</li>
+                      <li>تأكد من ثبات شبكة ومصادر الإنترنت في متصفحك أو هاتفك.</li>
+                      <li>حاول إعادة محاولة التسجيل لجلسة الدخول لتأكيد الهوية.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions footer */}
+              <div className="flex gap-2.5 mt-6 pt-4 border-t border-slate-100">
+                {syncState === 'error' && (
+                  <button
+                    onClick={triggerManualCloudSync}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/15"
+                  >
+                    إعادة المحاولة الآن 🔄
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowSyncErrorModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-255 text-slate-700 text-xs font-extrabold py-2.5 px-4 rounded-xl transition-all"
+                >
+                  إغلاق نافذة الدعم
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

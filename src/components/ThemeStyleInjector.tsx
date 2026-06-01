@@ -6,12 +6,8 @@ interface ThemeStyleInjectorProps {
 }
 
 export default function ThemeStyleInjector({ primaryColor }: ThemeStyleInjectorProps) {
-  // If no primary color configured or is blue (default), we don't need any override
-  if (!primaryColor || primaryColor === 'blue') {
-    return null;
-  }
-
-  const colors = getPresetColors(primaryColor);
+  const activeTheme = primaryColor || 'blue';
+  const colors = getPresetColors(activeTheme);
   const cssRules = Object.entries(colors)
     .map(([weight, hex]) => `--color-blue-${weight}: ${hex} !important;`)
     .join('\n');
@@ -21,6 +17,22 @@ export default function ThemeStyleInjector({ primaryColor }: ThemeStyleInjectorP
       :root {
         ${cssRules}
       }
+      .bg-primary-gradient {
+        background-image: linear-gradient(135deg, var(--color-blue-600) 0%, var(--color-blue-650) 50%, var(--color-blue-800) 100%) !important;
+      }
+      .bg-blue-600 {
+        background-image: linear-gradient(135deg, var(--color-blue-600) 0%, var(--color-blue-700) 100%) !important;
+        border-color: transparent !important;
+      }
+      .bg-blue-600:hover {
+        background-image: linear-gradient(135deg, var(--color-blue-650) 0%, var(--color-blue-750) 100%) !important;
+      }
+      .text-primary-gradient {
+        background-image: linear-gradient(135deg, var(--color-blue-600) 0%, var(--color-blue-800) 100%) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
     `}} />
   );
 }
+

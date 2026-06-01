@@ -2,10 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TeacherPreferences, Student, Appointment } from '../types';
 import { 
   Settings, KeyRound, CloudLightning, Database, Download, Upload, Trash2, 
-  RefreshCw, Key, ShieldCheck, AlertTriangle, Palette, Check, Sliders, Bell
+  RefreshCw, Key, ShieldCheck, AlertTriangle, Palette, Check, Sliders, Bell,
+  Chrome
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { COLOR_PRESETS } from '../lib/theme';
+import { googleSignIn, getAccessToken, auth } from '../lib/firebaseAuth';
+import { uploadBackupToGoogleDrive } from '../lib/googleDriveSync';
 
 interface SettingsPanelProps {
   preferences: TeacherPreferences;
@@ -42,6 +45,13 @@ export default function SettingsPanel({
     data?: any;
   } | null>(null);
   const [clearWord, setClearWord] = useState('');
+
+  // Google Drive states
+  const [isDriveBackingUp, setIsDriveBackingUp] = useState(false);
+  const [isDriveRestoring, setIsDriveRestoring] = useState(false);
+  const [driveLastBackupTime, setDriveLastBackupTime] = useState<string>(() => {
+    return localStorage.getItem('teacher_drive_last_backup') || 'لم يتم المزامنة والحفظ سحابياً بعد';
+  });
 
   // Notification threshold customization states
   const [notifSettings, setNotifSettings] = useState(() => {
@@ -224,6 +234,129 @@ export default function SettingsPanel({
       setLastSyncTime(time);
       triggerSuccess('تمت مزاوجة وتحديث السحابة ومزامنة الأجهزة بنجاح!');
     }, 1800);
+  };
+
+  // Google Drive integrations upload and restore
+  const handleUploadToGoogleDrive = async () => {
+    setIsDriveBackingUp(true);
+    try {
+      let token = getAccessToken();
+      if (!token) {
+        const res = await googleSignIn();
+        if (res) {
+          token = res.accessToken;
+        }
+      }
+
+      if (!token) {
+        throw new Error('لم يتم الاتصال أو منح الصلاحية لحسابك على Google Drive.');
+      }
+
+      let backupTimeStr = '';
+      try {
+        backupTimeStr = await uploadBackupToGoogleDrive(token, preferences, students, appointments);
+      } catch (err: any) {
+        // Try one sign-in refresh on Auth failure
+        const res = await googleSignIn();
+        if (res?.accessToken) {
+          backupTimeStr = await uploadBackupToGoogleDrive(res.accessToken, preferences, students, appointments);
+        } else {
+          throw err;
+        }
+      }
+
+      setDriveLastBackupTime(backupTimeStr);
+      localStorage.setItem('teacher_drive_last_backup', backupTimeStr);
+      
+      // Update the preference last backup date as well so auto-sync knows it was run today
+      const todayStr = new Date().toISOString().split('T')[0];
+      onUpdatePreferences({ lastGoogleDriveBackupDate: todayStr });
+
+      triggerSuccess('تم رفع وحفظ ملف النسخة الاحتياطية بنجاح على Google Drive! ☁️');
+    } catch (err: any) {
+      console.error(err);
+      setConfirmDialog({
+        type: 'error',
+        message: err.message || 'حدث خطأ غير متوقع أثناء الحفظ على Google Drive.'
+      });
+    } finally {
+      setIsDriveBackingUp(false);
+    }
+  };
+
+  const handleRestoreFromGoogleDrive = async () => {
+    setIsDriveRestoring(true);
+    try {
+      let token = getAccessToken();
+      if (!token) {
+        const res = await googleSignIn();
+        if (res) {
+          token = res.accessToken;
+        }
+      }
+
+      if (!token) {
+        throw new Error('لم يتم الاتصال أو منح الصلاحية لحسابك على Google Drive.');
+      }
+
+      // 1. Search for existing backup file with same name
+      const searchRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name%3D%27teacher_app_backup.json%27+and+trashed%3Dfalse&fields=files(id,name)`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!searchRes.ok) {
+        throw new Error('فشل العثور على ملفات النسخ الاحتياطية في حسابك.');
+      }
+
+      const searchObj = await searchRes.json();
+      const existingFile = searchObj.files && searchObj.files[0];
+      const fileId = existingFile?.id;
+
+      if (!fileId) {
+        throw new Error('عذراً، لم نتمكن من الحصول على ملف باسم "teacher_app_backup.json" في حساب Google Drive الخاص بك. من فضلك قم بعمل حفظ احتياطي أولاً.');
+      }
+
+      // 2. Download contents
+      const getRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!getRes.ok) {
+        throw new Error('فشل تحميل محتوى ملف النسخة الاحتياطية من Google Drive الخاص بك.');
+      }
+
+      const parsed = await getRes.json();
+      if (!parsed.students || !Array.isArray(parsed.students)) {
+        throw new Error('البيانات المسترجعة من الملف تالفة أو غير متوافقة.');
+      }
+
+      setConfirmDialog({
+        type: 'import-backup',
+        data: {
+          students: parsed.students,
+          appointments: parsed.appointments || [],
+          preferences: parsed.preferences || preferences,
+        }
+      });
+    } catch (err: any) {
+      console.error(err);
+      setConfirmDialog({
+        type: 'error',
+        message: err.message || 'حدث خطأ أثناء استيراد البيانات من Google Drive.'
+      });
+    } finally {
+      setIsDriveRestoring(false);
+    }
   };
 
   return (
@@ -540,6 +673,61 @@ export default function SettingsPanel({
               accept=".json"
               className="hidden"
             />
+          </div>
+
+          {/* Google Drive Integration */}
+          <div className="p-4 bg-blue-50/40 border border-blue-100/80 rounded-2xl space-y-3.5 mt-3.5">
+            <h4 className="text-xs font-extrabold text-blue-900 flex items-center gap-2 justify-start">
+              <svg className="w-4.5 h-4.5 shrink-0" viewBox="0 0 24 24">
+                <path fill="#0F9D58" d="M15.43 14.85l-3.43-5.93h6.86z"/>
+                <path fill="#4285F4" d="M12 9l-3.43 5.92h6.86z" transform="rotate(120 12 11)"/>
+                <path fill="#FFBA00" d="M12 9l-3.43 5.92h6.86z" transform="rotate(240 12 11)"/>
+              </svg>
+              <span>النسخ والاحتفاظ ببياناتك على Google Drive ☁️</span>
+            </h4>
+
+            <p className="text-[10px] text-slate-505 leading-relaxed font-semibold">
+              مزامنة مباشرة لحفظ نسخة من بياناتك وسجلات طلابك على حساب Google Drive الخاص بك لضمان حمايتها واستعادتها بسهولة تامة في أي وقت ومكان.
+            </p>
+
+            <div className="flex justify-between items-center text-[10px] bg-white border border-blue-50 p-2.5 rounded-xl">
+              <span className="text-slate-500 font-bold">آخر حفظ احتياطي على Google Drive:</span>
+              <span className="font-extrabold text-blue-700 font-mono text-[10.5px]">{driveLastBackupTime}</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleUploadToGoogleDrive}
+                disabled={isDriveBackingUp || isDriveRestoring}
+                className="flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-450 text-white rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-all active:scale-98"
+              >
+                {isDriveBackingUp ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />
+                ) : (
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                  </svg>
+                )}
+                <span>{isDriveBackingUp ? 'جاري رفع النسخة...' : 'حفظ احتياطي على Drive'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRestoreFromGoogleDrive}
+                disabled={isDriveBackingUp || isDriveRestoring}
+                className="flex items-center justify-center gap-2 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-205 rounded-xl font-bold text-xs cursor-pointer shadow-3xs transition-all active:scale-98 disabled:bg-slate-100 disabled:text-slate-450"
+              >
+                {isDriveRestoring ? (
+                  <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                ) : (
+                  <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                  </svg>
+                )}
+                <span>{isDriveRestoring ? 'جاري استيراد...' : 'استيراد من Google Drive'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Dynamic Auto Backup/Google Drive Sync Selection */}
