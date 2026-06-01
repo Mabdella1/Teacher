@@ -4,20 +4,32 @@
   "description": "منصة تنظيم وإدارة حسابات المعلم وتتبع الطلاب والحصص والأنصبة والمدفوعات والمستحقات المالية",
   "icons": [
     {
-      "src": "/app_icon.png",
+      "src": "./app_icon.png?v=2",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/app_icon.png",
+      "src": "./app_icon.png?v=2",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./app_icon.png?v=2",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./app_icon.png?v=2",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "/",
-  "background_color": "#f8fafc",
+  "start_url": ".",
+  "background_color": "#0f172a",
   "theme_color": "#1e3a8a",
   "display": "standalone",
   "orientation": "portrait"
