@@ -913,8 +913,8 @@ export default function Scheduler({
             </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-right text-xs min-w-[655px]">
                   <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-100">
                     <tr>
                       <th className="px-5 py-3.5">اسم الطالب</th>

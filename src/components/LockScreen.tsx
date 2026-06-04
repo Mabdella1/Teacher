@@ -4,12 +4,13 @@ import {
   UserPlus, LogIn, Lock, GraduationCap, Grid,
   Sparkles, CheckCircle2, ChevronRight, AlertCircle, Laptop, Smartphone,
   Copy, Check, ExternalLink, User, BookOpen, ShieldCheck, HelpCircle, Eye, EyeOff,
-  Chrome
+  Chrome, Mail, MessageCircle
 } from 'lucide-react';
 import { COLOR_PRESETS, getPresetColors } from '../lib/theme';
 import { emailSignUp, emailSignIn, googleSignIn, auth } from '../lib/firebaseAuth';
 import { sendEmailVerification } from 'firebase/auth';
 import { saveWorkspaceToCloud, fetchWorkspaceFromCloud } from '../lib/firebaseSync';
+import { Student } from '../types';
 
 // Convert any arbitrary username text (Arabic, spaces, emojis, etc.) into a 100% valid Firebase Auth email
 const convertToSafeEmail = (username: string): string => {
@@ -49,10 +50,16 @@ interface LockScreenProps {
   // Fallback for passcode to keep existing handlers valid if needed
   storedPasscode?: string;
   onUnlock?: () => void;
+  students?: Student[];
+  onStudentLogin?: (student: Student) => void;
 }
 
-export default function LockScreen({ onLogin }: LockScreenProps) {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+export default function LockScreen({ onLogin, students = [], onStudentLogin }: LockScreenProps) {
+  const [activeTab, setActiveTab] = useState<'login' | 'register' | 'student'>('login');
+  
+  // Student Login States
+  const [studentPhone, setStudentPhone] = useState('');
+  const [studentPassword, setStudentPassword] = useState('');
   
   // Registration States
   const [regFullName, setRegFullName] = useState('');
@@ -200,6 +207,52 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
     }
   };
 
+  const handleStudentLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    const trimmedPhone = studentPhone.trim();
+    if (!trimmedPhone) {
+      setError('الرجاء إدخال رقم الهاتف المسجل لتتم التحقق من هويتك كطالب.');
+      return;
+    }
+
+    const cleanInput = trimmedPhone.replace(/\D/g, '');
+    if (!students || students.length === 0) {
+      setError('لا توجد بيانات طلاب نشطة حالياً على هذا الجهاز. يرجى مراجعة المعلم ليقوم بتسجيلك وتفعيل حسابك السحابي أولاً.');
+      return;
+    }
+
+    console.log("[Student Portal Login] Attempting login with:", cleanInput);
+    // Find a student where clean stored phone matches clean input phone
+    const foundStudent = students.find(s => {
+      const cleanStoredPhone = s.phone.replace(/\D/g, '');
+      return cleanStoredPhone === cleanInput || cleanStoredPhone.endsWith(cleanInput) || cleanInput.endsWith(cleanStoredPhone);
+    });
+
+    if (foundStudent) {
+      if (foundStudent.password && foundStudent.password.trim() !== '') {
+        if (!studentPassword.trim()) {
+          setError('عذراً! هذا الحساب محمي بكلمة مرور. الرجاء إدخال كلمة المرور لدخول البوابة.');
+          return;
+        }
+        if (foundStudent.password.trim() !== studentPassword.trim()) {
+          setError('كلمة المرور غير صحيحة! يرجى التحقق من المدخلات أو مراجعة معلمك.');
+          return;
+        }
+      }
+      setSuccess(`مرحباً بك مجدداً يا ${foundStudent.name}! تم التحقق بنجاح... 🎉`);
+      setTimeout(() => {
+        if (onStudentLogin) {
+          onStudentLogin(foundStudent);
+        }
+      }, 1000);
+    } else {
+      setError('عذراً! لم نجد أي طالب مسجل برقم الهاتف هذا لدى الأستاذ. يرجى التحقق من الرقم الصحيح المحفوظ أو مراجعة معلمك.');
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -261,13 +314,26 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
       }
 
     } catch (err: any) {
-      console.error(err);
-      if (err.message && (err.message.includes('auth/invalid-credential') || err.message.includes('auth/user-not-found') || err.message.includes('auth/wrong-password'))) {
-        setError('البريد الإلكتروني أو كلمة المرور غير صحيحة! يرجى إعادة التحقق ثم المحاولة مرة أخرى.');
-      } else if (err.message && (err.message.includes('auth/operation-not-allowed') || err.message.includes('operation-not-allowed'))) {
-        setError('⚠️ المزامنة السحابية مقفلة! الرجاء تفعيل موفر الدخول بالبريد والرمز (Email/Password) في منصة Firebase Auth.');
+      const errMsg = err?.message || String(err);
+      const isOfflineError = err?.isOffline || 
+                             errMsg.toLowerCase().includes('offline') || 
+                             errMsg.toLowerCase().includes('network') || 
+                             errMsg.toLowerCase().includes('unavailable') ||
+                             errMsg.toLowerCase().includes('failed to get document') ||
+                             errMsg.toLowerCase().includes('connection');
+
+      if (isOfflineError) {
+        console.warn("Doubtful network connection / offline mode detected during credential validation login:", errMsg);
+        setError('عذراً، لم نتمكن من الاتصال بالخادم السحابي لأن جهازك غير متصل بالإنترنت حالياً. يرجى التحقق من الشبكة ثم المحاولة مجدداً.');
       } else {
-        setError(`فشل عملية تسجيل الدخول: ${err.message || 'يرجى التحقق من اتصالك بالإنترنت والعودة لاحقاً.'}`);
+        console.error(err);
+        if (err.message && (err.message.includes('auth/invalid-credential') || err.message.includes('auth/user-not-found') || err.message.includes('auth/wrong-password'))) {
+          setError('البريد الإلكتروني أو كلمة المرور غير صحيحة! يرجى إعادة التحقق ثم المحاولة مرة أخرى.');
+        } else if (err.message && (err.message.includes('auth/operation-not-allowed') || err.message.includes('operation-not-allowed'))) {
+          setError('⚠️ المزامنة السحابية مقفلة! الرجاء تفعيل موفر الدخول بالبريد والرمز (Email/Password) في منصة Firebase Auth.');
+        } else {
+          setError(`فشل عملية تسجيل الدخول: ${err.message || 'يرجى التحقق من اتصالك بالإنترنت والعودة لاحقاً.'}`);
+        }
       }
     }
   };
@@ -361,11 +427,24 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
         }, 1500);
       }
     } catch (err: any) {
-      console.error(err);
-      if (err.message && err.message.includes('auth/popup-closed-by-user')) {
-        setError('تم إغلاق نافذة تسجيل الدخول من Google قبل إكمال العملية.');
+      const errMsg = err?.message || String(err);
+      const isOfflineError = err?.isOffline || 
+                             errMsg.toLowerCase().includes('offline') || 
+                             errMsg.toLowerCase().includes('network') || 
+                             errMsg.toLowerCase().includes('unavailable') ||
+                             errMsg.toLowerCase().includes('failed to get document') ||
+                             errMsg.toLowerCase().includes('connection');
+
+      if (isOfflineError) {
+        console.warn("Google sign-in/sync failed due to internet dropout or offline status:", errMsg);
+        setError('تعذر الدخول أو المزامنة بواسطة Google بسبب انقطاع شبكة الإنترنت أو وجود جهازك في وضع غير متصل.');
       } else {
-        setError(`فشل تسجيل الدخول بواسطة Google: ${err.message || 'يرجى المحاولة مرة أخرى.'}`);
+        console.error(err);
+        if (err.message && err.message.includes('auth/popup-closed-by-user')) {
+          setError('تم إغلاق نافذة تسجيل الدخول من Google قبل إكمال العملية.');
+        } else {
+          setError(`فشل تسجيل الدخول بواسطة Google: ${err.message || 'يرجى المحاولة مرة أخرى.'}`);
+        }
       }
     }
   };
@@ -398,11 +477,11 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
         {/* Auth Box Container */}
         <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 shadow-lg space-y-6">
           
-          {/* Custom Slider Tab Selector */}
-          <div className="relative grid grid-cols-2 p-1 bg-slate-100 rounded-2xl border border-slate-200/40">
+          {/* Custom Slider Tab Selector - 3 columns */}
+          <div className="relative grid grid-cols-3 p-1 bg-slate-100 rounded-2xl border border-slate-200/40">
             {/* Animated Slider Pill */}
-            <div className="absolute top-1 bottom-1 p-0.5 w-[50%] transition-transform duration-300 ease-out" style={{
-              transform: activeTab === 'register' ? 'translateX(-100%)' : 'translateX(0%)',
+            <div className="absolute top-1 bottom-1 p-0.5 w-[33.33%] transition-transform duration-300 ease-out" style={{
+              transform: activeTab === 'login' ? 'translateX(0%)' : activeTab === 'register' ? 'translateX(-100%)' : 'translateX(-200%)',
               right: 4
             }}>
               <div className="w-full h-full bg-white rounded-xl shadow-md border border-slate-200/50" />
@@ -410,21 +489,30 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
 
             <button
               onClick={() => { setActiveTab('login'); setError(''); setSuccess(''); }}
-              className={`relative z-10 py-3 text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'login' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+              className={`relative z-10 py-3 text-[11px] sm:text-xs font-black transition-all duration-200 flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'login' ? 'text-blue-600 font-extrabold' : 'text-slate-550 hover:text-slate-800'
               }`}
             >
-              <LogIn size={15} />
-              <span>تسجيل الدخول</span>
+              <LogIn size={13} />
+              <span>دخول المعلم</span>
             </button>
             <button
               onClick={() => { setActiveTab('register'); setError(''); setSuccess(''); }}
-              className={`relative z-10 py-3 text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                activeTab === 'register' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+              className={`relative z-10 py-3 text-[11px] sm:text-xs font-black transition-all duration-200 flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'register' ? 'text-blue-600 font-extrabold' : 'text-slate-550 hover:text-slate-800'
               }`}
             >
-              <UserPlus size={15} />
-              <span>إنشاء حساب جديد</span>
+              <UserPlus size={13} />
+              <span>حساب جديد</span>
+            </button>
+            <button
+              onClick={() => { setActiveTab('student'); setError(''); setSuccess(''); }}
+              className={`relative z-10 py-3 text-[11px] sm:text-xs font-black transition-all duration-200 flex flex-col sm:flex-row items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'student' ? 'text-indigo-600 font-extrabold animate-pulse' : 'text-slate-550 hover:text-indigo-650'
+              }`}
+            >
+              <GraduationCap size={15} />
+              <span>بوابة الطلاب 🎓</span>
             </button>
           </div>
 
@@ -457,7 +545,7 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
 
           {/* Tab Panel Forms */}
           <AnimatePresence mode="wait">
-            {activeTab === 'login' ? (
+            {activeTab === 'login' && (
               <motion.form 
                 key="login-view"
                 initial={{ opacity: 0, x: -10 }}
@@ -554,7 +642,9 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
                   <span>تسجيل الدخول بواسطة Google</span>
                 </button>
               </motion.form>
-            ) : (
+            )}
+
+            {activeTab === 'register' && (
               <motion.form
                 key="register-view"
                 initial={{ opacity: 0, x: 10 }}
@@ -707,6 +797,60 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
                 </button>
               </motion.form>
             )}
+
+            {activeTab === 'student' && (
+              <motion.form 
+                key="student-view"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                onSubmit={handleStudentLogin}
+                className="space-y-4 text-right animate-none"
+              >
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-slate-705 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <Smartphone size={13} className="text-slate-400 animate-pulse" />
+                      <span>رقم الهاتف المحمول المسجّل للاتصال *</span>
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="أدخل رقم هاتف الاشتراك (مثل: 01015672901)"
+                      value={studentPhone}
+                      onChange={(e) => setStudentPhone(e.target.value)}
+                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-indigo-500 rounded-2xl text-[12px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all font-sans"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-705 font-extrabold text-[11px] mb-1.5 pr-1 flex items-center gap-1 justify-start">
+                      <Lock size={13} className="text-slate-400" />
+                      <span>كلمة مرور بوابة الطلاب (اختياري / إذا قمت بتفعيلها)</span>
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="اكتب كلمة السر الخاصة بك للدخول الآمن"
+                      value={studentPassword}
+                      onChange={(e) => setStudentPassword(e.target.value)}
+                      className="w-full text-right px-4 py-3 placeholder:text-slate-350 bg-slate-50 border border-slate-200/80 focus:border-indigo-500 rounded-2xl text-[12px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-indigo-800 font-bold bg-indigo-50 border border-indigo-100 p-3.5 rounded-2xl leading-relaxed text-right">
+                  💡 تنبيه مرن: أدخل رقم هاتفك المسجل لدى الأستاذ في قائمة طلاب الكورس لمراجعة الحصص المقررة والواجبات والأقساط والامتحانات فوراً!
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-2xl font-black text-xs transition duration-150 shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 cursor-pointer flex items-center justify-center gap-2 mt-4 font-sans"
+                >
+                  <GraduationCap size={15} />
+                  <span>دخول بوابة الطلاب المتميزين 🎓</span>
+                </button>
+              </motion.form>
+            )}
           </AnimatePresence>
         </div>
 
@@ -736,7 +880,30 @@ export default function LockScreen({ onLogin }: LockScreenProps) {
         </div>
 
         {/* Brand signature and privacy check */}
-        <div className="space-y-1 text-center">
+        <div className="space-y-2 text-center">
+          {/* Support and Communication option with purely icons and hidden info */}
+          <div className="flex items-center justify-center gap-4 py-1.5">
+            <span className="text-[10px] text-slate-400 font-extrabold">للدعم الفني والاستفسارات:</span>
+            <a 
+              href="https://wa.me/201005515631" 
+              target="_blank" 
+              rel="noreferrer"
+              title="تواصل معنا عبر واتساب"
+              className="p-2 bg-emerald-50 hover:bg-emerald-100 hover:scale-110 text-emerald-600 rounded-full transition-all border border-emerald-150 shadow-3xs"
+            >
+              <MessageCircle size={16} />
+            </a>
+            <a 
+              href="mailto:mesa10310@gmail.com" 
+              target="_blank" 
+              rel="noreferrer"
+              title="تواصل معنا عبر البريد الإلكتروني"
+              className="p-2 bg-blue-50 hover:bg-blue-100 hover:scale-110 text-blue-600 rounded-full transition-all border border-blue-150 shadow-3xs"
+            >
+              <Mail size={16} />
+            </a>
+          </div>
+
           <p className="text-[10px] text-slate-400 font-bold leading-relaxed flex items-center justify-center gap-1.5">
             <ShieldCheck size={12} className="text-blue-500" />
             <span>نظام المعلم الذكي • حماية مدمجة، تشفير كامل للأقساط والبيانات السحابية</span>

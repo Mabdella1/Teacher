@@ -227,11 +227,18 @@ export default function Dashboard({ students, appointments, preferences, onSelec
     let totalPaymentsReceived = 0;
     let totalExpectedEarnings = 0;
     let totalOutstandingBalance = 0;
+    let dailyEarnings = 0;
+    let weeklyEarnings = 0;
 
     let activeCount = 0;
     let lessonTypeCount = 0;
     let courseTypeCount = 0;
     let totalSessionsDelivered = 0;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
 
     students.forEach(student => {
       // Keep track of counts
@@ -244,9 +251,19 @@ export default function Dashboard({ students, appointments, preferences, onSelec
         }
       }
 
-      // Total payments received (cash on hand)
+      // Total payments received (cash on hand) and daily/weekly earnings
       const studentPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
       totalPaymentsReceived += studentPaid;
+
+      student.payments.forEach(p => {
+        const pDate = p.date.split('T')[0];
+        if (pDate === todayStr) {
+          dailyEarnings += p.amount;
+        }
+        if (pDate >= sevenDaysAgoStr) {
+          weeklyEarnings += p.amount;
+        }
+      });
 
       // Total sessions delivered by student
       totalSessionsDelivered += student.sessions.length;
@@ -275,6 +292,8 @@ export default function Dashboard({ students, appointments, preferences, onSelec
       totalPaymentsReceived,
       totalExpectedEarnings: Math.round(totalExpectedEarnings),
       totalOutstandingBalance: Math.round(totalOutstandingBalance),
+      dailyEarnings,
+      weeklyEarnings,
       totalStudents: students.length,
       activeStudents: activeCount,
       inactiveStudents: students.length - activeCount,
@@ -471,14 +490,14 @@ export default function Dashboard({ students, appointments, preferences, onSelec
         <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow duration-200 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/2 rounded-full translate-x-3 -translate-y-3" />
           <div className="flex items-center justify-between">
-            <div className="space-y-1 text-right">
-              <span className="text-xs text-slate-450 font-black block leading-none">المدفوعات الإجمالية</span>
+            <div className="space-y-1 text-right font-sans">
+              <span className="text-xs text-slate-450 font-black block leading-none">الإيرادات المحصلة (كاش)</span>
               <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-none tracking-tight flex items-baseline gap-1 py-1">
                 {metrics.totalPaymentsReceived.toLocaleString('ar-EG')} <span className="text-xs font-black text-slate-450">{currency}</span>
               </h3>
-              <p className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1">
+              <p className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1 flex-wrap">
                 <TrendingUp size={11} />
-                <span>المبالغ المحصلة نقداً بالكامل</span>
+                <span>اليوم: <span className="underline decoration-wavy decoration-emerald-400">{metrics.dailyEarnings.toLocaleString('ar-EG')}</span> • الأسبوع: <span className="underline decoration-wavy decoration-emerald-400">{metrics.weeklyEarnings.toLocaleString('ar-EG')}</span> {currency}</span>
               </p>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 group-hover:scale-110 transition-transform duration-200">

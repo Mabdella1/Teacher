@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { Student } from '../types';
 import { 
   FileSpreadsheet, FileText, Calendar, ChevronDown, Users, CheckCircle2, AlertCircle, AlertTriangle, TrendingUp, PieChart as PieIcon,
-  Download, Loader2, Target, Percent, Coins
+  Download, Loader2, Target, Percent, Coins, Printer, X
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { toPng } from 'html-to-image';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -34,6 +35,7 @@ export default function FinancialReports({ students, currency }: FinancialReport
   const [selectedYear, setSelectedYear] = useState(() => String(now.getFullYear()));
   const [showPrintWarning, setShowPrintWarning] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isDetailedReportModalOpen, setIsDetailedReportModalOpen] = useState(false);
 
   // Target Monthly Budget logic
   const budgetKey = `monthly_earnings_target_${selectedYear}_${selectedMonth}`;
@@ -259,41 +261,89 @@ export default function FinancialReports({ students, currency }: FinancialReport
     try {
       await new Promise((resolve) => setTimeout(resolve, 250));
 
-      const canvas = await html2canvas(element, {
-        scale: 2.2,
-        useCORS: true,
-        logging: false,
+      const elementWidth = element.offsetWidth || 850;
+      const elementHeight = element.offsetHeight || 1100;
+
+      const imgData = await toPng(element, {
+        pixelRatio: 2.2,
+        cacheBust: true,
         backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 850
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdf = new jsPDF('p', 'mm', 'a4');
       
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
       const imgWidth = pdfWidth;
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      const imgHeight = (elementHeight * pdfWidth) / elementWidth;
       
       let heightLeft = imgHeight;
       let position = 0;
 
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pdfHeight;
 
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
         heightLeft -= pdfHeight;
       }
 
       pdf.save(`التقرير_المالي_والأداء_الشامل_شهر_${selectedMonth}_${selectedYear}.pdf`);
     } catch (err) {
       console.error('Failed to generate PDF:', err);
+      alert('حدث خطأ أثناء رصد وتحميل كشف الـ PDF. يرجى تجربة فتح التطبيق في علامة تبويب مستقلة وإعادة المحاولة.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const handleExportDetailedPDF = async () => {
+    const element = document.getElementById('financial-detailed-report-printable-area');
+    if (!element) {
+      console.error('Target element "financial-detailed-report-printable-area" not found');
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      const elementWidth = element.offsetWidth || 850;
+      const elementHeight = element.offsetHeight || 1100;
+
+      const imgData = await toPng(element, {
+        pixelRatio: 2.2,
+        cacheBust: true,
+        backgroundColor: '#ffffff',
+      });
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pdfWidth;
+      const imgHeight = (elementHeight * pdfWidth) / elementWidth;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`تقرير_المستحقات_التفصيلي_TEACHER_شهر_${selectedMonth}_${selectedYear}.pdf`);
+    } catch (err) {
+      console.error('Failed to generate detailed PDF:', err);
       alert('حدث خطأ أثناء رصد وتحميل كشف الـ PDF. يرجى تجربة فتح التطبيق في علامة تبويب مستقلة وإعادة المحاولة.');
     } finally {
       setIsGeneratingPDF(false);
@@ -351,6 +401,14 @@ export default function FinancialReports({ students, currency }: FinancialReport
           >
             <FileSpreadsheet size={15} />
             <span>تصدير تقرير Excel</span>
+          </button>
+
+          <button
+            onClick={() => setIsDetailedReportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm active:scale-95 duration-200"
+          >
+            <FileText size={15} />
+            <span>استخراج تقرير تفصيلي للطباعة (PDF)</span>
           </button>
 
           <button
@@ -735,8 +793,8 @@ export default function FinancialReports({ students, currency }: FinancialReport
           كشف تفصيلي بأرباح وحصص ومطالبات الطلاب في شهر {selectedMonth}/{selectedYear}
         </h3>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-right text-xs">
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-right text-xs min-w-[750px]">
             <thead className="bg-slate-50 text-slate-605 font-bold border-b border-slate-100">
               <tr>
                 <th className="py-3 px-4">اسم الطالب</th>
@@ -852,7 +910,8 @@ export default function FinancialReports({ students, currency }: FinancialReport
               كشف الذمم المالية المتأخرة والمطالبات المستحقة للطلاب
             </h3>
             
-            <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden min-w-[650px]">
               <thead className="bg-slate-100 text-slate-605 font-bold border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3">اسم الطالب</th>
@@ -893,6 +952,7 @@ export default function FinancialReports({ students, currency }: FinancialReport
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Academic Performance & Lesson Density Analysis */}
@@ -902,7 +962,8 @@ export default function FinancialReports({ students, currency }: FinancialReport
               إحصائيات أداء وحضور الطلاب (نشاط الحصص والدروس)
             </h3>
 
-            <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden min-w-[650px]">
               <thead className="bg-slate-100 text-slate-605 font-bold border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3">اسم الطالب</th>
@@ -937,6 +998,7 @@ export default function FinancialReports({ students, currency }: FinancialReport
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Report Footer / Signature Area */}
@@ -1005,6 +1067,293 @@ export default function FinancialReports({ students, currency }: FinancialReport
           </div>
         </div>
       )}
+
+      {/* Detailed Print Report Modal for Teacher and Student Dues */}
+      <AnimatePresence>
+        {isDetailedReportModalOpen && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-md">
+            <style dangerouslySetInnerHTML={{ __html: `
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #financial-detailed-report-printable-area, #financial-detailed-report-printable-area * {
+                  visibility: visible !important;
+                }
+                #financial-detailed-report-printable-area {
+                  position: absolute !important;
+                  top: 0 !important;
+                  left: 0 !important;
+                  width: 100% !important;
+                  background: white !important;
+                  color: black !important;
+                  z-index: 9999999 !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  padding: 24px !important;
+                  margin: 0 !important;
+                }
+                .print-hidden-btn {
+                  display: none !important;
+                }
+                * {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+              }
+            `}} />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-4xl bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl z-10 font-sans text-right text-slate-800 max-h-[90vh] overflow-y-auto"
+            >
+              {/* Header inside modal */}
+              <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-6 print-hidden-btn">
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <FileText className="text-indigo-600" size={20} />
+                  معاينة تقرير المستحقات التفصيلي الجاهز للطباعة
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsDetailedReportModalOpen(false)}
+                  className="p-1.5 hover:bg-slate-105 rounded-full transition text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Top Controls Bar */}
+              <div className="flex flex-wrap gap-2.5 justify-end mb-6 print-hidden-btn">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      window.print();
+                    } catch(e) {}
+                  }}
+                  className="flex items-center gap-1.5 px-4.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-md shadow-indigo-600/15 transition-all duration-200"
+                >
+                  <Printer size={15} />
+                  <span>طباعة الكشف الفورية (أو الحفظ كـ PDF)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportDetailedPDF}
+                  disabled={isGeneratingPDF}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-50 border border-rose-150 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-xl cursor-pointer shadow-sm disabled:opacity-50 transition-all duration-200"
+                >
+                  {isGeneratingPDF ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  <span>{isGeneratingPDF ? 'جاري التحرير...' : 'تنزيل التقرير تلقائياً'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDetailedReportModalOpen(false)}
+                  className="px-4 py-2.5 text-slate-600 hover:text-slate-800 bg-slate-100/80 hover:bg-slate-200 rounded-xl cursor-pointer text-xs font-bold transition-all duration-200"
+                >
+                  إغلاق المعاينة
+                </button>
+              </div>
+
+              {/* Printable Document Sheet Container */}
+              <div 
+                id="financial-detailed-report-printable-area" 
+                className="bg-white p-8 border border-slate-200 rounded-2xl font-sans text-right relative text-slate-850"
+                dir="rtl"
+              >
+                {/* Document Brand Banner / Header */}
+                <div className="border-b-4 border-indigo-600 pb-5 mb-6 flex justify-between items-end">
+                  <div>
+                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black px-2 py-0.5 rounded-lg inline-block mb-1.5">كشف مالي معتمد للدروس والمستحقات</span>
+                    <h1 className="text-xl font-black text-slate-900 tracking-tight">كشف المستحقات الطلابية وحسابات الذمم للطلبة والمعلم</h1>
+                    <p className="text-xs text-slate-500 mt-1 font-bold">
+                      أرباح وحصص ومطالبات شهر: <span className="text-indigo-700 font-extrabold">{MONTHS.find(m => m.value === selectedMonth)?.name || `شهر ${selectedMonth}`}</span> لعام <span className="text-indigo-700 font-extrabold">{selectedYear}</span>
+                    </p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">تاريخ الاستخراج: {new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                  <div className="text-left font-sans">
+                    <div className="text-indigo-600 font-black text-base tracking-wider">الأستاذ Mohamed Abdella ( Abo Silem )</div>
+                    <p className="text-[10px] text-slate-400 font-bold mt-0.5">منصة تفوق الطلاب ومتابعة الشؤون الذكية</p>
+                  </div>
+                </div>
+
+                {/* Summary Grid */}
+                <div className="grid grid-cols-4 gap-4 mb-6">
+                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                    <p className="text-[10px] text-slate-500 font-extrabold mb-1">صافي أرباح الشهر المستحقة</p>
+                    <p className="text-base font-black text-slate-800">{totalMonthEarnings} <span className="text-xs text-slate-500 font-normal">{currency}</span></p>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
+                    <p className="text-[10px] text-slate-500 font-extrabold mb-1">إجمالي الدفعات والمحصل الفعلي</p>
+                    <p className="text-base font-black text-emerald-600">+{totalMonthPayments} <span className="text-xs text-emerald-700 font-normal">{currency}</span></p>
+                  </div>
+                  <div className="bg-red-50/50 border border-red-100 rounded-xl p-3 text-center">
+                    <p className="text-[10px] text-red-600 font-extrabold mb-1">الذمم والديون المتبقية للطلبة</p>
+                    <p className="text-base font-black text-red-650">{totalPendingDue} <span className="text-xs text-red-500 font-normal">{currency}</span></p>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center">
+                    <p className="text-[10px] text-indigo-700 font-extrabold mb-1">نسبة إنجاز مستهدف الميزانية</p>
+                    <p className="text-base font-black text-indigo-850">
+                      {targetBudget > 0 ? Math.round((totalMonthEarnings / targetBudget) * 100) : 100}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* SECTION 1: MASTER TEACHER RECEIVABLES REPORT */}
+                <div className="mb-6">
+                  <h3 className="text-xs font-black text-slate-800 mb-2.5 pb-1.5 border-b border-indigo-100 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block" />
+                    أولاً: مستحقات المعلم وأرباح عمل الحصص والدروس لشهر التصفية ({selectedMonth}/{selectedYear})
+                  </h3>
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-right text-[11px] border border-slate-200 rounded-xl overflow-hidden min-w-[750px]">
+                    <thead className="bg-slate-100 text-slate-650 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">اسم الطالب</th>
+                        <th className="py-2.5 px-3">نظام التعليم المالي</th>
+                        <th className="py-2.5 px-3 text-center">الحصص المنجزة هذا الشهر</th>
+                        <th className="py-2.5 px-3">تسعيرة الدرس/الكورس</th>
+                        <th className="py-2.5 px-3 font-extrabold text-indigo-950">الأرباح المستحقة للمعلم</th>
+                        <th className="py-2.5 px-3">المسدد والمدفوع بالشهر</th>
+                        <th className="py-2.5 px-3 text-center">حالة تسوية رصيد الشهر</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-slate-700">
+                      {reportItems.map((item) => {
+                        const sData = students.find(s => s.id === item.studentId);
+                        const customRateLabel = item.studentType === 'lesson' 
+                          ? `${sData?.lessonRate || 0} ${currency}` 
+                          : `${sData?.coursePrice || 0} ${currency}`;
+                        const monthBalance = item.totalEarnings - item.totalPaid;
+                        return (
+                          <tr key={item.studentId} className="hover:bg-slate-50/50">
+                            <td className="py-2 px-3 font-bold text-slate-905">{item.studentName}</td>
+                            <td className="py-2 px-3">
+                              <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${item.studentType === 'lesson' ? 'bg-indigo-50 text-indigo-700' : 'bg-pink-50 text-pink-700'}`}>
+                                {item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-center font-bold text-slate-650">{item.sessionsCount} حصة منقضية</td>
+                            <td className="py-2 px-3 font-semibold text-slate-500">{customRateLabel}</td>
+                            <td className="py-2 px-3 font-extrabold text-slate-850 bg-slate-50/40">{item.totalEarnings} {currency}</td>
+                            <td className="py-2 px-3 font-bold text-emerald-650">+{item.totalPaid} {currency}</td>
+                            <td className="py-2 px-3 text-center font-bold">
+                              {monthBalance <= 0 ? (
+                                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-150 inline-block">مسدد كامل رصيده 🥇</span>
+                              ) : (
+                                <span className="text-[10px] font-extrabold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-150 inline-block">متبقي بذمته {monthBalance} {currency}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Sums row */}
+                      <tr className="bg-indigo-50/30 font-black text-slate-900 border-t-2 border-indigo-150">
+                        <td colSpan={2} className="py-2.5 px-3">ملخص أرباح الحصص المنجزة الإجمالي:</td>
+                        <td className="py-2.5 px-3 text-center font-black">{activeSessionsThisMonth} حصة مكملة</td>
+                        <td className="py-2.5 px-3">-</td>
+                        <td className="py-2.5 px-3 text-slate-900 bg-indigo-100/35">{totalMonthEarnings} {currency}</td>
+                        <td className="py-2.5 px-3 text-emerald-650">+{totalMonthPayments} {currency}</td>
+                        <td className="py-2.5 px-3 text-center text-indigo-800">
+                          {Math.max(0, totalMonthEarnings - totalMonthPayments)} {currency} (الرصيد المعلق للشهر)
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+
+                {/* SECTION 2: STUDENT OUTSTANDING BALANCES REPORT */}
+                <div className="mb-6">
+                  <h3 className="text-xs font-black text-slate-800 mb-2.5 pb-1.5 border-b border-red-100 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                    ثانياً: الديون المترتبة ومطالبات الطلاب المتراكمة حتى الآن (المتأخرات الكلية المتبقية)
+                  </h3>
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-right text-[11px] border border-slate-200 rounded-xl overflow-hidden min-w-[750px]">
+                    <thead className="bg-slate-100 text-slate-650 font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3">اسم الطالب</th>
+                        <th className="py-2.5 px-3">النظام الدراسي المفصل</th>
+                        <th className="py-2.5 px-3 text-center">إجمالي قيمة الحصص والبرامج المسجلة</th>
+                        <th className="py-2.5 px-3">إجمالي كافة المبالغ المسددة كلياً</th>
+                        <th className="py-2.5 px-3 text-center text-red-800 bg-red-100/10">متبقي الذمة المستحقة (متأخرات كلية مستهدفة)</th>
+                        <th className="py-2.5 px-3 text-center">موعد الاستحقاق المالي القادم</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-slate-700">
+                      {reportItems.map((item) => {
+                        const sData = students.find(s => s.id === item.studentId);
+                        let totalAcademicCharge = 0;
+                        const allPaymentsPaid = sData?.payments.reduce((sum, p) => sum + p.amount, 0) || 0;
+                        
+                        if (sData?.type === 'lesson') {
+                          totalAcademicCharge = (sData?.sessions.length || 0) * (sData?.lessonRate || 0);
+                        } else {
+                          const totalExtraCost = sData?.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0) || 0;
+                          totalAcademicCharge = (sData?.coursePrice || 0) + totalExtraCost;
+                        }
+
+                        return (
+                          <tr key={item.studentId} className="hover:bg-slate-55">
+                            <td className="py-2 px-3 font-semibold text-slate-900">{item.studentName}</td>
+                            <td className="py-2 px-3 text-slate-500">
+                              {item.studentType === 'lesson' ? 'نظام حصص يومية' : 'نظام كورس كامل مبرم'}
+                            </td>
+                            <td className="py-2 px-3 text-center font-semibold text-slate-600">{totalAcademicCharge} {currency}</td>
+                            <td className="py-2 px-3 font-semibold text-emerald-650">+{allPaymentsPaid} {currency}</td>
+                            <td className="py-2 px-3 text-center font-bold bg-red-50/30">
+                              {item.overallOutstanding > 0 ? (
+                                <span className="bg-red-100 text-red-800 px-2.2 py-0.5 rounded font-black border border-red-200">
+                                  {item.overallOutstanding} {currency}
+                                </span>
+                              ) : (
+                                <span className="text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-150 inline-block">حساب سليم 0 {currency}</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-center font-mono text-slate-500 font-bold">
+                              {sData?.dueDate ? sData.dueDate : 'لا يوجد متأخرات'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {/* Summary Outstanding Totals */}
+                      <tr className="bg-red-50/15 font-black text-slate-900 border-t-2 border-red-200">
+                        <td colSpan={4} className="py-2.5 px-3 text-slate-800 font-black">إجمالي المطالبات المتراكمة والذمم المستحقة للتحصيل الفوري:</td>
+                        <td className="py-2.5 px-3 text-center text-red-650 text-sm font-black bg-red-100 border border-red-200/50">
+                          {totalPendingDue} {currency}
+                        </td>
+                        <td className="py-2.5 px-3">-</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+
+                {/* Notes & Signs */}
+                <div className="border-t border-slate-200 pt-5 mt-7 flex justify-between items-start text-xs text-slate-500">
+                  <div>
+                    <h4 className="font-extrabold text-slate-800">توجيهات وملاحظات التسوية:</h4>
+                    <p className="text-[10px] text-slate-400 mt-1 max-w-lg leading-relaxed font-bold">
+                      * يرجى مطابقة هذا الكشف ومراجعته بدقة، والتحقق المستمر لضمان تطابق المدفوعات المستلمة والمقيدة لدعم تفوق الطلاب.
+                    </p>
+                  </div>
+                  <div className="text-left font-sans">
+                    <p className="font-extrabold text-slate-800">توقيع واعتماد الأستاذ:</p>
+                    <div className="text-left mt-2 flex flex-col items-end">
+                      <div className="w-36 h-12 border border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-350 italic text-[9px]">
+                        معتمد بالتصريح المالي
+                      </div>
+                      <span className="text-[9.5px] text-slate-400 mt-1 font-mono">النسخة المعتمدة v1.3 • Mohamed Abdella</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

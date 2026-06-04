@@ -7,6 +7,8 @@ export interface Session {
   notes?: string;
   isExtra?: boolean; // indicates an extra/additional lesson outside of course limits
   extraPrice?: number; // specific custom price for this extra session
+  evaluation?: 'ممتاز' | 'جيد جداً' | 'جيد' | 'مقبول' | 'ضعيف';
+  evaluationNotes?: string;
 }
 
 export interface RewardTransaction {
@@ -60,6 +62,10 @@ export interface Student {
   customReminderNote?: string; // custom notification note
   studyNotes?: StudyNote[]; // custom study notes
   whatsAppTemplates?: { id: string; title: string; text: string }[];
+  password?: string; // Student custom password for portal
+  overallEvaluation?: 'ممتاز' | 'جيد جداً' | 'جيد' | 'مقبول' | 'ضعيف';
+  overallEvaluationNotes?: string;
+  cardColor?: string; // Hex color for ID card accent
 }
 
 export interface Appointment {
@@ -153,5 +159,30 @@ export interface TeacherAccount {
   passwordHash: string; // Passcode or password representation
   createdAt: string;
 }
+
+export interface ChatFile {
+  name: string;
+  type: string;
+  size: number;
+  data: string; // Base64 Content URI
+}
+
+export interface ChatMessage {
+  id: string;
+  studentId: string;
+  sender: 'teacher' | 'student';
+  senderName?: string;
+  text: string;
+  timestamp: number;
+  file?: ChatFile;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  studentIds: string[];
+  createdAt: number;
+}
+
 
 

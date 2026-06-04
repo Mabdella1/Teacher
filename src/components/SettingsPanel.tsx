@@ -1222,7 +1222,7 @@ export default function SettingsPanel({
                     {confirmDialog.type === 'clear-all' && (
                       <div className="space-y-3">
                         <p>
-                          سيتم حذف جميع الطلاب، الفواتير، المواعيد، الحصص، والمقادير المالية من هاتفك ومتصفحك بشكل نهائي ولا يمكن استعادتها.
+                          سيتم حذف جميع الطلاب، الفواتير، المواعيد، الحصص، والمقادير المالية من هاتفك ومتصفحك (التخزين المحلي) ومن السيرفر بشكل كامل (التخزين السحابي) بشكل نهائي وبدء تهيئة نظيفة جديدة ولا يمكن تراجع هذه الخطوة.
                         </p>
                         <div className="space-y-1.5 bg-red-50 p-3.5 border border-red-100 rounded-2xl text-right">
                           <label className="font-bold text-red-950 block">للتأكيد والمتابعة، يرجى كتابة الكلمة "حذف" أدناه:</label>

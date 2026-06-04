@@ -175,8 +175,8 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
       active: true,
       lessonRate: type === 'lesson' ? parseFloat(lessonRate) || 0 : undefined,
       coursePrice: type === 'course' ? parseFloat(coursePrice) || 0 : undefined,
-      totalLessonsCount: undefined, // الغي عدد الحصص
-      dueDate: type === 'course' ? '1 في الشهر' : undefined, // موعد الاستحقاق وخليها 1 في الشهر
+      totalLessonsCount: undefined,
+      dueDate: type === 'course' ? '1 في الشهر' : undefined,
       photo: photo || undefined,
       autoReminder: autoReminder || false,
     });
@@ -362,676 +362,34 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
           </div>
         ) : (
           filteredStudents.map((student) => {
-            const sessionsCount = student.sessions.length;
-            const totalPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
-            
-            const resolvedSubject = subject || (()=>{
-              try {
-                const stored = localStorage.getItem('teacherPreferences');
-                if (stored) {
-                  return JSON.parse(stored).subject;
-                }
-              } catch (e) {}
-              return '';
-            })() || 'مادة عامة';
-
-            // Calculate current month's weekly attendance counts for the Sparkline
-            const now = new Date();
-            const currentYearStr = String(now.getFullYear());
-            const currentMonthStr = String(now.getMonth() + 1).padStart(2, '0');
-            
-            const monthSessions = (student.sessions || []).filter(session => {
-              if (!session.date) return false;
-              return session.date.startsWith(`${currentYearStr}-${currentMonthStr}`);
-            });
-
-            const w1 = monthSessions.filter(s => {
-              const d = parseInt(s.date.split('-')[2], 10);
-              return d >= 1 && d <= 7;
-            }).length;
-            const w2 = monthSessions.filter(s => {
-              const d = parseInt(s.date.split('-')[2], 10);
-              return d >= 8 && d <= 14;
-            }).length;
-            const w3 = monthSessions.filter(s => {
-              const d = parseInt(s.date.split('-')[2], 10);
-              return d >= 15 && d <= 21;
-            }).length;
-            const w4 = monthSessions.filter(s => {
-              const d = parseInt(s.date.split('-')[2], 10);
-              return d >= 22 && d <= 31;
-            }).length;
-
-            const totalMonthSessions = monthSessions.length;
-            
-            const maxVal = Math.max(w1, w2, w3, w4, 2);
-            const y1 = 24 - (w1 / maxVal) * 20;
-            const y2 = 24 - (w2 / maxVal) * 20;
-            const y3 = 24 - (w3 / maxVal) * 20;
-            const y4 = 24 - (w4 / maxVal) * 20;
-
-            const pathD = `M 10 ${y1} L 40 ${y2} L 70 ${y3} L 100 ${y4}`;
-            const areaD = `M 10 26 L 10 ${y1} L 40 ${y2} L 70 ${y3} L 100 ${y4} L 100 26 Z`;
-
-            let remainingInCourse = 0;
-            let totalDue = 0;
-
-            if (student.type === 'lesson') {
-              const totalCost = sessionsCount * (student.lessonRate || 0);
-              totalDue = totalCost - totalPaid;
-            } else if (student.type === 'course') {
-              remainingInCourse = Math.max(0, (student.totalLessonsCount || 0) - sessionsCount);
-              totalDue = (student.coursePrice || 0) - totalPaid;
-            }
-
-            const getPerformanceStatus = () => {
-              const rate = student.lessonRate || 100;
-              const price = student.coursePrice || 800;
-              
-              if (student.type === 'lesson') {
-                if (totalDue > rate * 2) {
-                  return {
-                    label: 'متعثر ماليًا',
-                    color: 'bg-rose-50 text-rose-700 border-rose-150',
-                    icon: '⚠️'
-                  };
-                } else if (totalDue <= 0 && sessionsCount >= 4) {
-                  return {
-                    label: 'ممتاز ومثالي',
-                    color: 'bg-emerald-50 text-emerald-700 border-emerald-150',
-                    icon: '👑'
-                  };
-                } else {
-                  return {
-                    label: 'منتظم',
-                    color: 'bg-slate-50 text-slate-600 border-slate-150',
-                    icon: '✨'
-                  };
-                }
-              } else {
-                const total = student.totalLessonsCount || 8;
-                const progressRatio = total > 0 ? (sessionsCount / total) : 0;
-                
-                if (totalDue > price * 0.3) {
-                  return {
-                    label: 'متأخر السداد',
-                    color: 'bg-rose-50 text-rose-700 border-rose-150',
-                    icon: '⚠️'
-                  };
-                } else if (progressRatio >= 0.75 && totalDue <= 0) {
-                  return {
-                    label: 'مكتمل ومتميز',
-                    color: 'bg-emerald-50 text-emerald-700 border-emerald-150',
-                    icon: '👑'
-                  };
-                } else {
-                  return {
-                    label: 'منتظم',
-                    color: 'bg-slate-50 text-slate-600 border-slate-150',
-                    icon: '✨'
-                  };
-                }
-              }
-            };
-
-            const perfStatus = getPerformanceStatus();
-            const studentAppointments = appointments?.filter(appt => appt.studentId === student.id) || [];
-
             return (
               <motion.div
                 key={student.id}
                 layoutId={`card-${student.id}`}
-                whileHover={{ scale: 1.015, y: -4 }}
+                whileHover={{ scale: 1.02, y: -2 }}
                 transition={{ type: "spring", stiffness: 350, damping: 28 }}
-                className={`group premium-card p-5 flex flex-col justify-between relative cursor-pointer ${
-                  expandedSchedules.includes(student.id) ? 'ring-2 ring-blue-500 bg-blue-50/15' : ''
-                } ${
-                  !student.active ? 'opacity-60 bg-slate-50/40 hover:opacity-95' : ''
+                onClick={() => onSelectStudent(student.id)}
+                className={`group bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-4.5 flex items-center justify-between relative cursor-pointer shadow-3xs hover:shadow-xs transition-colors duration-300 ${
+                  !student.active ? 'opacity-65 hover:opacity-95' : ''
                 }`}
-                onClick={() => toggleScheduleExpansion(student.id)}
               >
-                {/* Floating Performance Tag */}
-                <motion.div 
-                  className={`absolute -top-2.5 right-4.5 px-2.5 py-0.5 text-[9px] rounded-full font-black border tracking-wide flex items-center gap-1.5 shadow-3xs z-10 ${perfStatus.color}`}
-                  title={perfStatus.label}
-                  animate={{
-                    scale: [1, 1.05, 1],
-                  }}
-                  transition={{
-                    duration: 2.5,
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                >
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      perfStatus.label.includes('ممتاز') || perfStatus.label.includes('متميز')
-                        ? 'bg-[#10b981]' 
-                        : perfStatus.label.includes('متعثر') || perfStatus.label.includes('متأخر')
-                        ? 'bg-[#f43f5e]' 
-                        : 'bg-[#64748b]'
-                    }`}></span>
-                    <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                      perfStatus.label.includes('ممتاز') || perfStatus.label.includes('متميز')
-                        ? 'bg-[#10b981]' 
-                        : perfStatus.label.includes('متعثر') || perfStatus.label.includes('متأخر')
-                        ? 'bg-[#f43f5e]' 
-                        : 'bg-[#64748b]'
-                    }`}></span>
-                  </span>
-                  <span>{perfStatus.icon}</span>
-                  <span>{perfStatus.label}</span>
-                </motion.div>
-
-                <div>
-                  <div className="flex justify-between items-start gap-2 mb-3 px-0.5">
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
-                        student.type === 'lesson'
-                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-100/60'
-                          : 'bg-pink-50 text-pink-700 border border-pink-100/60'
-                      }`}
-                    >
-                      {student.type === 'lesson' ? 'نظام الحصص' : 'نظام الكورسات'}
-                    </span>
-                    
-                    <div className="flex gap-2.5 items-center">
-                      <span
-                        className={`text-[9.5px] px-2 py-0.5 rounded-full font-bold ${
-                          student.active
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100/60'
-                            : 'bg-slate-100 text-slate-500 border border-slate-200'
-                        }`}
-                      >
-                        {student.active ? 'نشط' : 'متوقف'}
-                      </span>
-                      
-                      {student.phone ? (
-                        <a
-                           href={((): string => {
-                            const reminderMsg = `السلام عليكم، أردت تذكيركم بموعد حصة الطالب "${student.name}" القادمة والمقررة بجدولنا. يرجى تأكيد الموعد، أو إخبارنا لإعادة جدولته إن دعت الحاجة. تحياتنا لكم!`;
-                            let cleanPhone = student.phone.replace(/\D/g, '');
-                            if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-                              cleanPhone = '2' + cleanPhone;
-                            }
-                            return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(reminderMsg)}`;
-                          })()}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-slate-400 hover:text-emerald-500 transition-colors cursor-pointer flex items-center justify-center p-0.5 hover:scale-110 active:scale-95"
-                          title="إرسال تذكير سريع بالموعد أو إعادة الجدولة"
-                        >
-                          <MessageCircle size={15} />
-                        </a>
-                      ) : (
-                        <span
-                          className="text-slate-250 cursor-not-allowed flex items-center justify-center p-0.5"
-                          title="رقم الهاتف غير مسجل لإرسال تذكير"
-                        >
-                          <MessageCircle size={15} className="opacity-30" />
-                        </span>
-                      )}
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingStudent(student);
-                          setEditName(student.name);
-                          setEditPhone(student.phone || '');
-                          setEditType(student.type);
-                          setEditActive(student.active);
-                          setEditLessonRate(student.lessonRate ? student.lessonRate.toString() : '100');
-                          setEditCoursePrice(student.coursePrice ? student.coursePrice.toString() : '800');
-                          setEditPhoto(student.photo);
-                          setEditAutoReminder(student.autoReminder || false);
-                        }}
-                        className="text-slate-400 hover:text-blue-500 transition-colors cursor-pointer hover:scale-110 active:scale-95 mx-1"
-                        title="تعديل بيانات الطالب"
-                      >
-                        <Edit size={14} />
-                      </button>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirmStudent(student);
-                        }}
-                        className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer hover:scale-110 active:scale-95"
-                        title="حذف الطالب"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400">
-                      <User size={20} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-base font-bold text-slate-800 group-hover:text-blue-600 transition-colors duration-300 leading-tight">
-                          {student.name}
-                        </h3>
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.25 rounded-md text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-150 whitespace-nowrap transition-all duration-300 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-3xs" title="إجمالي الحصص المنجزة">
-                          {sessionsCount} حصص
-                        </span>
-                        {studentAppointments.length > 0 && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.25 rounded-md text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-150/85 whitespace-nowrap animate-in fade-in duration-300" title="لديه مواعيد أسبوعية مجدولة">
-                            <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                            <span>مجدول 📅</span>
-                          </span>
-                        )}
-                      </div>
-                      {student.phone ? (
-                        <p className="text-xs text-slate-550 flex items-center gap-1.5 mt-1 transition-all duration-300 group-hover:text-emerald-700">
-                          <Phone size={12} className="text-slate-400 group-hover:text-emerald-500 transition-all duration-300 group-hover:animate-bounce" />
-                          <span className="font-mono group-hover:font-extrabold tracking-wide transition-all duration-300">{student.phone}</span>
-                        </p>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 font-semibold group-hover:text-slate-500 transition-colors duration-300">بدون رقم هاتف</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Elegant Hover-Activated Info Summary Drawer */}
-                  <div className="max-h-0 opacity-0 overflow-hidden transition-all duration-500 ease-in-out group-hover:max-h-[160px] group-hover:opacity-100 group-hover:mt-3 pt-0 group-hover:pt-2.5 border-t border-dashed border-slate-200">
-                    <div className="space-y-1.5 text-[11px] text-slate-600" dir="rtl">
-                      <div className="flex justify-between items-center bg-slate-50 border border-slate-100 rounded-lg py-1 px-2.5 shadow-3xs">
-                        <span className="text-slate-500 font-bold">نوع الالتزام:</span>
-                        <span className={`font-black ${
-                          totalMonthSessions >= 5
-                            ? 'text-emerald-650'
-                            : totalMonthSessions >= 3
-                              ? 'text-blue-650'
-                              : totalMonthSessions >= 1
-                                ? 'text-amber-550'
-                                : 'text-slate-450'
-                        }`}>
-                          {totalMonthSessions >= 5 ? 'إلتزام ممتاز 🔥' : totalMonthSessions >= 3 ? 'حضور مستقر ✨' : totalMonthSessions >= 1 ? 'تفاعل متقطع ⚠️' : 'بحاجة للمتابعة 💤'}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between items-center px-1">
-                        <span className="text-slate-450 font-bold">المادة / المقرر:</span>
-                        <span className="font-extrabold text-blue-650 text-xs">{resolvedSubject}</span>
-                      </div>
-
-                      {student.phone && (
-                        <div className="flex justify-between items-center px-1">
-                          <span className="text-slate-450 font-bold">رقم الهاتف النشط:</span>
-                          <span className="font-mono font-black text-emerald-700 text-xs tracking-wider">{student.phone}</span>
-                        </div>
-                      )}
-
-                      {student.sessions.length > 0 && (
-                        <div className="flex justify-between items-center px-1">
-                          <span className="text-slate-450 font-bold">تاريخ آخر حصة:</span>
-                          <span className="font-mono font-black text-slate-700 text-xs">{student.sessions[student.sessions.length - 1].date}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Core details by type */}
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-1.5 text-xs">
-                    {student.type === 'lesson' ? (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">سعر الحصة:</span>
-                          <span className="font-bold text-slate-700">
-                            {student.lessonRate} {currency}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">الحصص المسجلة:</span>
-                          <span className="font-bold text-slate-700">{sessionsCount} حصص</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">قيمة الكورس:</span>
-                          <span className="font-bold text-slate-700">
-                            {student.coursePrice} {currency}
-                          </span>
-                        </div>
-                        {student.totalLessonsCount !== undefined ? (
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">الحصص المتبقية:</span>
-                            <span
-                              className={`font-bold ${
-                                remainingInCourse <= 2 ? 'text-red-650' : 'text-slate-700'
-                              }`}
-                            >
-                              {remainingInCourse} من {student.totalLessonsCount} حصص
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between">
-                            <span className="text-slate-500">الحصص المسجلة:</span>
-                            <span className="font-bold text-slate-700">{sessionsCount} حصص</span>
-                          </div>
-                        )}
-                        {student.dueDate && (
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-slate-550">استحقاق الدفع:</span>
-                            <span className="font-bold text-amber-600">{student.dueDate}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  {/* Attendance Sparkline for Current Month */}
-                  <div className="mt-3.5 p-3 bg-slate-50 border border-slate-150/80 rounded-2xl animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-black text-slate-700 flex items-center gap-1">
-                        📈
-                        <span>وتيرة الحضور (الشهر الحالي)</span>
-                      </span>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-150 rounded-md">
-                        {totalMonthSessions} {totalMonthSessions === 1 ? 'حصة' : totalMonthSessions === 2 ? 'حصتان' : 'حصص'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {/* SVG Canvas for Sparkline */}
-                      <div className="flex-1 h-8 flex items-center justify-center bg-white/70 border border-slate-100 rounded-xl px-2">
-                        {totalMonthSessions > 0 ? (
-                          <svg className="w-full h-full overflow-visible" viewBox="0 0 110 30" dir="ltr">
-                            <defs>
-                              <linearGradient id={`spark-grad-${student.id}`} x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                              </linearGradient>
-                            </defs>
-                            {/* Gradient Area under curve */}
-                            <path
-                              d={areaD}
-                              fill={`url(#spark-grad-${student.id})`}
-                              className="transition-all duration-350"
-                            />
-                            {/* Sparkline curve */}
-                            <path
-                              d={pathD}
-                              fill="none"
-                              stroke={student.active ? '#2563eb' : '#64748b'}
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="transition-all duration-350"
-                            />
-                            {/* Anchored dots */}
-                            <circle cx="10" cy={y1} r="3" fill={student.active ? '#1d4ed8' : '#475569'} stroke="#ffffff" strokeWidth="1" className="hover:r-4 transition-all duration-150 cursor-pointer" />
-                            <circle cx="40" cy={y2} r="3" fill={student.active ? '#1d4ed8' : '#475569'} stroke="#ffffff" strokeWidth="1" className="hover:r-4 transition-all duration-150 cursor-pointer" />
-                            <circle cx="70" cy={y3} r="3" fill={student.active ? '#1d4ed8' : '#475569'} stroke="#ffffff" strokeWidth="1" className="hover:r-4 transition-all duration-150 cursor-pointer" />
-                            <circle cx="100" cy={y4} r="3" fill={student.active ? '#1d4ed8' : '#475569'} stroke="#ffffff" strokeWidth="1" className="hover:r-4 transition-all duration-150 cursor-pointer" />
-                          </svg>
-                        ) : (
-                          <div className="text-[9px] text-slate-400 font-semibold italic text-center w-full">
-                            📭 لا توجد حصص مسجلة هذا الشهر
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Sparkline Engagement Indicator */}
-                      <div className="flex flex-col gap-0.5 text-right pl-2 border-r border-slate-200">
-                        <span className="text-[8px] text-slate-400 font-bold whitespace-nowrap">الالتزام</span>
-                        <span className={`text-[10px] font-black whitespace-nowrap ${
-                          totalMonthSessions >= 5
-                            ? 'text-emerald-650'
-                            : totalMonthSessions >= 3
-                              ? 'text-blue-650'
-                              : totalMonthSessions >= 1
-                                ? 'text-amber-550'
-                                : 'text-slate-400'
-                        }`}>
-                          {totalMonthSessions >= 5 ? 'ممتاز 🔥' : totalMonthSessions >= 3 ? 'منتظم ✨' : totalMonthSessions >= 1 ? 'متقطع ⚠️' : 'خامل 💤'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {totalMonthSessions > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-150/50 flex justify-between text-[8px] text-slate-400 font-bold font-mono" dir="rtl">
-                        <div className="flex flex-col items-center">
-                          <span className="text-[7px]">أسبوع ١</span>
-                          <span className="text-slate-700 font-black text-[9px]">{w1}</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[7px]">أسبوع ٢</span>
-                          <span className="text-slate-700 font-black text-[9px]">{w2}</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[7px]">أسبوع ٣</span>
-                          <span className="text-slate-700 font-black text-[9px]">{w3}</span>
-                        </div>
-                        <div className="flex flex-col items-center">
-                          <span className="text-[7px]">أسبوع ٤</span>
-                          <span className="text-slate-700 font-black text-[9px]">{w4}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quick View Expandable Section */}
-                  <div className="mt-3 pt-2.5 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleQuickView(student.id);
-                      }}
-                      className="w-full flex items-center justify-between text-[10px] font-black text-slate-500 hover:text-blue-700 transition-colors cursor-pointer bg-slate-50 hover:bg-slate-100 px-2 rounded-lg py-1 border border-slate-200/60"
-                      id={`btn-quickview-${student.id}`}
-                    >
-                      <span className="flex items-center gap-1">
-                        ⏱️
-                        <span>العرض السريع (آخر 3 حصص)</span>
-                      </span>
-                      <span className="font-sans font-extrabold text-[9px] text-slate-400">
-                        {expandedQuickViews.includes(student.id) ? 'إخفاء ▲' : 'عرض آخر الحصص ▼'}
-                      </span>
-                    </button>
-
-                    <AnimatePresence initial={false}>
-                      {expandedQuickViews.includes(student.id) && (
-                        <motion.div
-                          key="quickview-panel"
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.25, ease: "easeInOut" }}
-                          className="overflow-hidden space-y-1 mt-2"
-                        >
-                          {student.sessions && student.sessions.length > 0 ? (
-                            [...student.sessions]
-                              .sort((a, b) => {
-                                const dateA = `${a.date}T${a.time || '00:00'}`;
-                                const dateB = `${b.date}T${b.time || '00:00'}`;
-                                return dateB.localeCompare(dateA);
-                              })
-                              .slice(0, 3)
-                              .map((session, sIdx) => (
-                                <div 
-                                  key={session.id || `session-list-${sIdx}-${session.date}`} 
-                                  className="flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100/70 border border-slate-100 rounded-xl text-[10px] transition-colors"
-                                >
-                                  <div className="flex items-center gap-1.5 truncate">
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-500 font-mono font-bold">
-                                      #{student.sessions.length - sIdx}
-                                    </span>
-                                    <span className="font-bold text-slate-700 truncate" title={session.notes}>
-                                      {session.notes || 'حصة منجزة'}
-                                    </span>
-                                  </div>
-                                  <div className="text-left shrink-0 text-slate-400 font-mono font-bold text-[9px] flex items-center gap-1">
-                                    <span>{session.date}</span>
-                                    {session.isExtra && (
-                                      <span className="bg-amber-100 text-amber-800 text-[8px] px-1 rounded font-black">إضافي</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))
-                          ) : (
-                            <div className="text-center py-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-[9px] text-slate-400 font-bold">
-                              📭 لا توجد حصص مسجلة بعد لهذا الطالب
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                {/* Homework & Manual Reminder Row */}
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {student.phone ? (
-                    <a
-                      href={((): string => {
-                        const latestSession = student.sessions && student.sessions.length > 0 
-                          ? student.sessions[student.sessions.length - 1] 
-                          : null;
-                        const notes = latestSession?.notes || 'لا يوجد واجب مسجل حالياً';
-                        const homeworkMsg = `السلام عليكم يا ${student.name}، نود تذكيركم بالواجب وملاحظات الحصة الأخيرة المطلوب إنجازها:
-📚 ${notes}`;
-                        let cleanPhone = student.phone.replace(/\D/g, '');
-                        if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-                          cleanPhone = '2' + cleanPhone;
-                        }
-                        return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(homeworkMsg)}`;
-                      })()}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex items-center justify-center gap-1 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-800 text-[10px] font-black rounded-xl transition cursor-pointer text-center"
-                    >
-                      <span className="text-emerald-600 text-[11px]">📱</span>
-                      <span>تذكير بالواجب</span>
-                    </a>
-                  ) : (
-                    <div className="flex items-center justify-center gap-1 py-1.5 bg-slate-50 border border-slate-200 text-slate-400 text-[10px] font-black rounded-xl select-none">
-                      <span>🔕</span>
-                      <span>بدون هاتف</span>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setReminderModalStudent(student);
-                      setReminderDate(student.customReminderDate || new Date().toISOString().split('T')[0]);
-                      setReminderNote(student.customReminderNote || '');
-                    }}
-                    className="flex items-center justify-center gap-1.5 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-150 hover:border-amber-250 text-amber-700 hover:text-amber-850 text-[10px] font-black rounded-xl transition cursor-pointer"
+                <div className="flex items-center gap-3.5 min-w-0">
+                  {/* Elegant User Initial Badge */}
+                  <div 
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shrink-0 shadow-sm ${
+                      !student.cardColor ? (student.active 
+                        ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-blue-500/10' 
+                        : 'bg-gradient-to-tr from-slate-400 to-slate-500 shadow-slate-400/10') : ''
+                    }`}
+                    style={student.cardColor && student.active ? { backgroundColor: student.cardColor } : undefined}
                   >
-                    <Bell size={11} className="text-amber-600" />
-                    <span>جدولة تذكير ⏰</span>
-                  </button>
-                </div>
-
-                {/* Active Custom Reminder Display */}
-                {student.customReminderDate && (
-                  <div className="mt-2.5 flex items-center justify-between gap-1 px-3 py-1.5 bg-indigo-50/60 border border-indigo-100 rounded-xl text-[10px] select-none">
-                    <div className="flex items-center gap-1 text-indigo-800 font-extrabold truncate">
-                      <Bell size={11} className="text-indigo-600 shrink-0" />
-                      <span className="truncate" title={student.customReminderNote}>تذكير: {student.customReminderDate} {student.customReminderNote ? `(${student.customReminderNote})` : ''}</span>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onUpdateStudent) {
-                          onUpdateStudent(student.id, { customReminderDate: undefined, customReminderNote: undefined });
-                        }
-                      }}
-                      className="text-indigo-400 hover:text-red-500 font-black px-1.5 py-0.5 rounded-md hover:bg-indigo-100/50 cursor-pointer"
-                      title="حذف التذكير"
-                    >
-                      إلغاء ❌
-                    </button>
+                    {student.name.trim().charAt(0).toUpperCase()}
                   </div>
-                )}
-
-                 {/* Expanded Upcoming Schedule Section */}
-                 <AnimatePresence initial={false}>
-                   {expandedSchedules.includes(student.id) && (
-                     <motion.div
-                       key="schedule-expansion"
-                       initial={{ height: 0, opacity: 0 }}
-                       animate={{ height: "auto", opacity: 1 }}
-                       exit={{ height: 0, opacity: 0 }}
-                       transition={{ duration: 0.25, ease: "easeInOut" }}
-                       className="overflow-hidden mt-3 pt-3 border-t border-dashed border-slate-200 text-right"
-                       onClick={(e) => e.stopPropagation()}
-                     >
-                       <div className="flex items-center justify-between mb-2">
-                         <span className="text-[10px] font-black text-slate-700 flex items-center gap-1.5 bg-blue-50/70 border border-blue-100/40 px-2 py-0.5 rounded-md">
-                           <CalendarRange size={11} className="text-blue-600 animate-pulse" />
-                           <span>جدول الحصص القادم والمواعيد الأسبوعية 📅</span>
-                         </span>
-                         <span className="text-[9px] font-bold text-slate-450 bg-slate-100 border border-slate-200/50 px-1.5 py-0.25 rounded">
-                           {studentAppointments.length} {studentAppointments.length === 1 ? 'موعد' : studentAppointments.length === 2 ? 'موعدان' : 'مواعيد'}
-                         </span>
-                       </div>
-
-                       {studentAppointments.length > 0 ? (
-                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[140px] overflow-y-auto pr-0.5 scrollbar-thin">
-                           {studentAppointments.map((appt) => (
-                             <div
-                               key={appt.id}
-                               className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50/30 to-blue-50/75 hover:from-blue-50/50 hover:to-blue-50/90 border border-blue-100/50 rounded-xl text-[10px] transition-all duration-300 shadow-3xs"
-                             >
-                               <div className="flex items-center gap-1.5 truncate">
-                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                                 <span className="font-extrabold text-blue-900">{appt.dayOfWeek}</span>
-                                 {appt.title && (
-                                   <span className="text-[8px] text-slate-450 font-bold truncate max-w-[70px]">
-                                     ({appt.title})
-                                   </span>
-                                 )}
-                               </div>
-                               <div className="text-left font-mono font-black text-blue-700 bg-white border border-blue-100/80 px-1.5 py-0.5 rounded-md text-[9px] shadow-3xs" dir="ltr">
-                                 {formatTimeTo12h(appt.time)}
-                               </div>
-                             </div>
-                           ))}
-                         </div>
-                       ) : (
-                         <div className="text-center py-4 bg-slate-50/40 border border-dashed border-slate-200/80 rounded-2xl text-[9.5px] text-slate-450 font-bold space-y-1">
-                           <p>📭 لم يتم جدولة مواعيد أسبوعية في النظام بعد</p>
-                           <p className="text-[8.5px] text-slate-400 font-semibold">يمكنك إضافة مواعيد ثابتة من تبويب المواعيد الحرة</p>
-                         </div>
-                       )}
-                     </motion.div>
-                   )}
-                 </AnimatePresence>
-
-                {/* Progress Indicators & Core Action */}
-                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-500 font-semibold">
-                      {totalDue > 0 ? 'متبقي عليه' : totalDue < 0 ? 'له رصيد' : 'مستحق مسدد'}
-                    </p>
-                    <p
-                      className={`text-sm font-extrabold ${
-                        totalDue > 0
-                          ? 'text-red-600'
-                          : totalDue < 0
-                          ? 'text-emerald-650'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {Math.abs(totalDue)} {currency}
-                    </p>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors duration-250 truncate">
+                      {student.name}
+                    </h3>
                   </div>
-
-                  <button
-                    onClick={() => onSelectStudent(student.id)}
-                    className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer border border-blue-100"
-                  >
-                    السجل والمتابعة ←
-                  </button>
                 </div>
               </motion.div>
             );
@@ -1180,8 +538,6 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                   )}
                 </AnimatePresence>
 
-
-
                 {/* Auto Reminder Option */}
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between p-3 bg-blue-50/40 rounded-2xl border border-blue-100/50">
                   <div className="flex items-center gap-2.5">
@@ -1278,7 +634,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
               >
                 {/* Basic Fields */}
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-650 font-bold block">اسم الطالب الثنائي/الكامل *</label>
+                  <label className="text-xs text-slate-655 font-bold block">اسم الطالب الثنائي/الكامل *</label>
                   <input
                     type="text"
                     required
@@ -1290,7 +646,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-650 font-bold block">رقم الهاتف (واتساب/اتصال)</label>
+                  <label className="text-xs text-slate-655 font-bold block">رقم الهاتف (واتساب/اتصال)</label>
                   <input
                     type="text"
                     value={editPhone}
@@ -1303,7 +659,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
 
                 {/* Status Switch (Active / Passive) */}
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-650 font-bold block">حالة الطالب بالمنصة *</label>
+                  <label className="text-xs text-slate-655 font-bold block">حالة الطالب بالمنصة *</label>
                   <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 border border-slate-200 rounded-xl">
                     <button
                       type="button"
@@ -1332,7 +688,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
 
                 {/* System Selection Button Group */}
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-650 font-bold block">نظام التعلم والمحاسبة *</label>
+                  <label className="text-xs text-slate-655 font-bold block">نظام التعلم والمحاسبة *</label>
                   <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1 border border-slate-200 rounded-xl">
                     <button
                       type="button"
@@ -1370,7 +726,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                       className="space-y-4 overflow-hidden"
                     >
                       <div className="space-y-1">
-                        <label className="text-xs text-slate-650 font-bold block">ثمن حصة الطالب الفردية ({currency}) *</label>
+                        <label className="text-xs text-slate-655 font-bold block">ثمن حصة الطالب الفردية ({currency}) *</label>
                         <input
                           type="number"
                           required
@@ -1408,7 +764,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
 
                 {/* Photo upload option */}
                 <div className="space-y-1 bg-slate-50 border border-slate-150 p-3 rounded-2xl">
-                  <label className="text-xs text-slate-650 font-bold block mb-1">صورة الطالب (اختياري)</label>
+                  <label className="text-xs text-slate-655 font-bold block mb-1">صورة الطالب (اختياري)</label>
                   <div className="flex items-center gap-3">
                     <input
                       type="file"
@@ -1449,7 +805,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                       onChange={(e) => setEditAutoReminder(e.target.checked)}
                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                     />
-                    <label htmlFor="edit-student-auto-reminder" className="text-xs text-slate-705 font-bold cursor-pointer select-none">
+                    <label htmlFor="edit-student-auto-reminder" className="text-xs text-slate-655 font-bold cursor-pointer select-none">
                       تفعيل التذكير التلقائي (قبل الحصة بـ 24 ساعة) 🔔
                     </label>
                   </div>
@@ -1529,7 +885,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                 <button
                   type="button"
                   onClick={() => setDeleteConfirmStudent(null)}
-                  className="px-4.5 py-2.5 text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+                  className="px-4.5 py-2.5 text-slate-600 hover:text-slate-800 bg-slate-100/80 hover:bg-slate-200 rounded-xl cursor-pointer"
                 >
                   إلغاء الحذف
                 </button>
@@ -1597,7 +953,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-black text-slate-700 mb-1.5">نص وملاحظة التذكير (مثال: متابعة واجب، تذكير بدفعة)</label>
+                  <label className="block text-[11px] font-black text-slate-705 mb-1.5">نص وملاحظة التذكير (مثال: متابعة واجب، تذكير بدفعة)</label>
                   <textarea
                     rows={3}
                     value={reminderNote}
@@ -1638,7 +994,6 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
           </div>
         )}
       </AnimatePresence>
-
 
     </div>
   );

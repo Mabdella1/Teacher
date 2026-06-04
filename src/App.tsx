@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Student, Appointment, TeacherPreferences, ExamAppointment } from './types';
 import LockScreen from './components/LockScreen';
+import StudentPortal from './components/StudentPortal';
 import StudentList from './components/StudentList';
 import StudentDetails from './components/StudentDetails';
 import Scheduler from './components/Scheduler';
@@ -9,10 +10,11 @@ import SettingsPanel from './components/SettingsPanel';
 import NotificationCenter from './components/NotificationCenter';
 import ThemeStyleInjector from './components/ThemeStyleInjector';
 import Dashboard from './components/Dashboard';
+import TeacherChatHub from './components/TeacherChatHub';
 import { 
   Users, CalendarDays, BarChart3, Settings, LogOut, Lock, Award, 
   Menu, X, Sparkles, GraduationCap, ChevronDown, User, LayoutGrid,
-  Cloud, CloudLightning, CloudOff
+  Cloud, CloudLightning, CloudOff, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { initAuth, logout, getAccessToken } from './lib/firebaseAuth';
@@ -122,11 +124,29 @@ export default function App() {
   const [examAppointments, setExamAppointments] = useState<ExamAppointment[]>([]);
   
   // App view control
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings' | 'chat'>('dashboard');
   const [navDropdownOpen, setNavDropdownOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Student portal login state & session persistence
+  const [studentUser, setStudentUser] = useState<Student | null>(() => {
+    const cached = localStorage.getItem('loggedStudent');
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) { return null; }
+    }
+    return null;
+  });
+
+  // Watch student session changes
+  useEffect(() => {
+    if (studentUser) {
+      localStorage.setItem('loggedStudent', JSON.stringify(studentUser));
+    } else {
+      localStorage.removeItem('loggedStudent');
+    }
+  }, [studentUser]);
 
   // Cloud Sync States
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -150,7 +170,8 @@ export default function App() {
       return;
     }
     try {
-      setSyncState('syncing');
+      // Keep silent to avoid blinking sync status
+      // setSyncState('syncing');
       await saveWorkspaceToCloud(userId, {
         teacherName: nextPrefs.teacherName,
         subject: nextPrefs.subject,
@@ -203,14 +224,28 @@ export default function App() {
       setSyncState('synced');
       setSyncError(null);
     } catch (err: any) {
-      console.error("[Manual Cloud Sync] Failed:", err);
       let errorMsg = err?.message || String(err);
       try {
         const parsed = JSON.parse(errorMsg);
         if (parsed.error) errorMsg = parsed.error;
       } catch(e) {}
-      setSyncError(errorMsg);
-      setSyncState('error');
+      
+      const isOfflineError = err?.isOffline || 
+                             errorMsg.toLowerCase().includes('offline') || 
+                             errorMsg.toLowerCase().includes('network') || 
+                             errorMsg.toLowerCase().includes('unavailable') ||
+                             errorMsg.toLowerCase().includes('failed to get document') ||
+                             errorMsg.toLowerCase().includes('connection');
+
+      if (isOfflineError) {
+        console.warn("[Manual Cloud Sync] Paused (Client in offline mode). Your edits are safe locally and will sync once internet connection resumes.");
+        setSyncState('synced');
+        setSyncError(null);
+      } else {
+        console.error("[Manual Cloud Sync] Failed:", err);
+        setSyncError(errorMsg);
+        setSyncState('error');
+      }
     }
   };
 
@@ -382,7 +417,8 @@ export default function App() {
     }
     if (!isCloudPullCompleted) return; // Prevent overwriting cloud data before initial pull completes
 
-    setSyncState('syncing');
+    // Keep syncState silent during automatic background sync to avoid visual distraction
+    // setSyncState('syncing');
 
     // Debounce cloud sync to group rapid consecutive state changes (like notes typing, checkbox clicks, etc.)
     const timer = setTimeout(async () => {
@@ -745,26 +781,91 @@ export default function App() {
     savePreferences(importedData.preferences);
   };
 
-  const handleClearAllSystemData = () => {
-    saveStudents([]);
-    saveAppointments([]);
-    setExamAppointments([]);
-    localStorage.setItem('teacherExamAppointments', JSON.stringify([]));
-    savePreferences({
+  const handleClearAllSystemData = async () => {
+    // 1. Clear State variables immediately
+    const resetPrefs: TeacherPreferences = {
       teacherName: 'الأستاذ الفاضل',
       subject: '',
       currency: 'ج.م',
       passcode: '', // Guided setup reset
-    });
+      primaryColor: 'indigo',
+      enableWhatsApp24hReminders: true,
+      autoBackupDownloadInterval: 'disabled',
+    };
+
+    saveStudents([]);
+    saveAppointments([]);
+    setExamAppointments([]);
+    localStorage.setItem('teacherExamAppointments', JSON.stringify([]));
+    savePreferences(resetPrefs);
+
+    // 2. Clear ALL local storage keys completely and securely
+    localStorage.removeItem('loggedStudent');
+    localStorage.removeItem('teacher_offline_mode');
+    localStorage.removeItem('teacher_drive_last_backup');
+    localStorage.removeItem('teacherNotificationSettings');
+    localStorage.removeItem('teacherActionAlerts');
+
+    // 3. Clear cloud database storage along with local storage if logged in
+    if (currentUserId && currentUserId !== "offline_local") {
+      try {
+        setSyncState('syncing');
+        await saveWorkspaceToCloud(currentUserId, {
+          teacherName: resetPrefs.teacherName,
+          subject: resetPrefs.subject,
+          currency: resetPrefs.currency,
+          passcode: resetPrefs.passcode,
+          primaryColor: resetPrefs.primaryColor,
+          enableWhatsApp24hReminders: resetPrefs.enableWhatsApp24hReminders,
+          autoBackupDownloadInterval: resetPrefs.autoBackupDownloadInterval,
+          students: [],
+          appointments: [],
+          examAppointments: [],
+        });
+        setSyncState('synced');
+        setSyncError(null);
+        console.log("[Cloud Factory Reset] Cloud storage updated with clean, initialized data alongside local storage.");
+      } catch (err: any) {
+        console.error("Failed to clear cloud database storage during reset:", err);
+        setSyncState('error');
+        setSyncError("لم نتمكن من مسح السحابة بالكامل: " + (err?.message || String(err)));
+      }
+    }
   };
 
-  // Locked check
+  // If a student is logged in, direct them to their portal bypassing the teacher's gatekeeper
+  if (studentUser) {
+    const activeStudentObj = students.find(s => s.id === studentUser.id) || studentUser;
+    return (
+      <>
+        <ThemeStyleInjector primaryColor={preferences.primaryColor} />
+        <StudentPortal
+          student={activeStudentObj}
+          allAppointments={appointments}
+          allExamAppointments={examAppointments}
+          preferences={preferences}
+          onLogout={() => {
+            setStudentUser(null);
+            setIsLocked(true);
+          }}
+          onUpdateStudent={handleUpdateStudent}
+        />
+      </>
+    );
+  }
+
+  // Locked check for teacher
   if (isLocked) {
     return (
       <>
         <ThemeStyleInjector primaryColor={preferences.primaryColor} />
         <LockScreen
           storedPasscode={preferences.passcode}
+          students={students}
+          onStudentLogin={(stu) => {
+            setStudentUser(stu);
+            setIsLocked(false);
+          }}
           onUnlock={() => setIsLocked(false)}
           onLogin={(account) => {
             savePreferences({ 
@@ -788,19 +889,28 @@ export default function App() {
       <ThemeStyleInjector primaryColor={preferences.primaryColor} />
 
       {/* Main Top Header Navigation */}
-      <header className="sticky top-0 z-45 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-3 md:px-8 py-2.5 flex items-center justify-between shadow-xs print:hidden select-none">
-        <div className="flex items-center gap-2 sm:gap-4 font-sans max-w-full overflow-hidden">
+      <header className="sticky top-0 z-45 bg-white/90 backdrop-blur-md border-b border-slate-200/90 px-4 md:px-8 py-3 flex items-center justify-between shadow-xs print:hidden select-none">
+        <div className="flex items-center gap-2.5 font-sans shrink-0">
+          {/* Mobile menu toggle button */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 text-slate-700 hover:bg-slate-100 border border-slate-200/40 rounded-xl transition-all cursor-pointer shrink-0 active:scale-95 flex items-center justify-center"
+            title="القائمة"
+          >
+            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+
           {/* Logo Card */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-transform shrink-0">
-              <GraduationCap size={20} className="text-white" />
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-transform shrink-0">
+              <GraduationCap size={22} className="text-white" />
             </div>
             <div className="leading-none">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs sm:text-sm font-black tracking-tight text-slate-900">Teacher</span>
-                <span className="text-[8px] sm:text-[9px] bg-blue-50 border border-blue-100 text-blue-700 font-extrabold px-1.5 py-0.25 rounded-md leading-none">برو</span>
+                <span className="text-base sm:text-lg md:text-xl font-black tracking-tight text-slate-900">Teacher</span>
+                <span className="text-[9px] sm:text-[10px] bg-blue-550/10 text-blue-700 border border-blue-550/15 font-black px-1.5 py-0.5 rounded-lg leading-none">برو 🔥</span>
               </div>
-              <p className="text-[8px] sm:text-[9.5px] text-slate-400 font-bold mt-0.5">منصة لإدارة الحصص الدراسية</p>
+              <p className="text-[9px] sm:text-[11px] text-slate-500 font-bold mt-1">منصة لإدارة الحصص الدراسية</p>
             </div>
           </div>
         </div>
@@ -825,68 +935,6 @@ export default function App() {
             currency={preferences.currency}
             preferences={preferences}
           />
-
-
-
-          {/* Cloud Sync Status Indicator */}
-          {currentUserId && (
-            <div 
-              onClick={() => setShowSyncErrorModal(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 cursor-pointer select-none active:scale-95 ${
-                syncState === 'synced'
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/15'
-                  : syncState === 'syncing'
-                  ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 animate-pulse hover:bg-indigo-500/15'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-600 animate-bounce hover:bg-rose-500/15'
-              }`}
-              title={syncState === 'synced' ? 'تم المزامنة والحفظ سحابياً بنجاح (اضغط للتفاصيل)' : syncState === 'syncing' ? 'جاري المزامنة...' : 'عطل مزامنة (اضغط لرؤية تفاصيل الخطأ)'}
-            >
-              <Cloud size={14} className={syncState === 'syncing' ? 'animate-bounce' : ''} />
-              <span>
-                {syncState === 'synced' ? 'مزامنة صحيحة (صح) 🟢' : syncState === 'syncing' ? 'جاري المزامنة...' : 'خطأ اتصال ❌'}
-              </span>
-            </div>
-          )}
-
-          {/* Google Drive Status Indicator */}
-          {currentUserId && currentUserId !== "offline_local" && preferences.autoBackupDownloadInterval !== 'disabled' && (
-            <div 
-              onClick={handleManualDriveSync}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] sm:text-xs font-extrabold transition-all duration-300 shrink-0 cursor-pointer select-none active:scale-95 ${
-                driveSyncState === 'synced'
-                  ? 'bg-blue-50 border-blue-150 text-blue-600 animate-none'
-                  : driveSyncState === 'syncing'
-                  ? 'bg-blue-50/50 border-blue-100 text-blue-500 animate-pulse'
-                  : driveSyncState === 'error'
-                  ? 'bg-amber-50 border-amber-200 text-amber-600'
-                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-              }`}
-              title={
-                driveSyncState === 'synced' 
-                  ? 'تم المزامنة والنسخ بنجاح على Google Drive. اضغط لمزامنة يدوية فورية.' 
-                  : driveSyncState === 'syncing' 
-                  ? 'جاري حفظ التعديلات سحابياً وتحديث ملف Drive...' 
-                  : driveSyncState === 'error'
-                  ? 'انتهت الصلاحية أو خطأ مزامنة. اضغط للمحاولة.'
-                  : 'مزامنة Google Drive جاهزة. اضغط للبدء.'
-              }
-            >
-              <svg className={`w-3.5 h-3.5 shrink-0 ${driveSyncState === 'syncing' ? 'animate-spin' : ''}`} viewBox="0 0 24 24">
-                <path fill="#0F9D58" d="M15.43 14.85l-3.43-5.93h6.86z"/>
-                <path fill="#4285F4" d="M12 9l-3.43 5.92h6.86z" transform="rotate(120 12 11)"/>
-                <path fill="#FFBA00" d="M12 9l-3.43 5.92h6.86z" transform="rotate(240 12 11)"/>
-              </svg>
-              <span className="hidden md:inline">
-                {driveSyncState === 'synced' 
-                  ? 'محفوظ بـ Drive ☁️' 
-                  : driveSyncState === 'syncing' 
-                  ? 'مزمن بـ Drive...' 
-                  : driveSyncState === 'error'
-                  ? 'فشل مزامنة Drive'
-                  : 'مزامنة تلقائية بـ Drive'}
-              </span>
-            </div>
-          )}
 
           {/* Cloud Sign Out Button */}
           {currentUserId && (
@@ -998,6 +1046,22 @@ export default function App() {
             >
               <BarChart3 size={15} />
               <span>المالية</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('chat');
+                setSelectedStudentId(null);
+              }}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
+                activeTab === 'chat'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/15'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <MessageSquare size={15} />
+              <span>المحادثات المباشرة</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             </button>
 
             <button
@@ -1116,6 +1180,25 @@ export default function App() {
 
           <button
             onClick={() => {
+              setActiveTab('chat');
+              setSelectedStudentId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full text-right flex items-center justify-between px-4 py-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'chat'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <MessageSquare size={16} className={`${activeTab === 'chat' ? 'text-white' : 'text-slate-550'}`} />
+              <span>المحادثات المباشرة</span>
+            </span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </button>
+
+          <button
+            onClick={() => {
               setActiveTab('settings');
               setSelectedStudentId(null);
               setMobileMenuOpen(false);
@@ -1149,16 +1232,17 @@ export default function App() {
             {selectedStudentObj ? (
               <motion.div
                 key="student-details-panel"
-                initial={{ opacity: 0, scale: 0.995 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.995 }}
-                transition={{ duration: 0.15 }}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 30 }}
+                transition={{ type: "spring", stiffness: 260, damping: 22 }}
               >
                 <StudentDetails
                   student={selectedStudentObj}
                   currency={preferences.currency}
                   onBack={() => setSelectedStudentId(null)}
                   onUpdateStudent={handleUpdateStudent}
+                  onDeleteStudent={handleDeleteStudent}
                   appointments={appointments}
                   preferences={preferences}
                 />
@@ -1166,10 +1250,10 @@ export default function App() {
             ) : (
               <motion.div
                 key={activeTab}
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 5 }}
-                transition={{ duration: 0.15 }}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
               >
                 {activeTab === 'dashboard' && (
                   <Dashboard
@@ -1233,18 +1317,23 @@ export default function App() {
                     onClearAllData={handleClearAllSystemData}
                   />
                 )}
+
+                {activeTab === 'chat' && (
+                  <TeacherChatHub
+                    students={students}
+                    preferences={preferences}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </main>
 
-        <footer className="bg-slate-50 border-t border-slate-200/80 py-6 text-center text-slate-400 text-[10px] font-bold print:hidden z-10 w-full mt-auto">
-          <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-right">
-            <p className="text-slate-550">مساعد تخطيط وإلتحاق ومتابعة شؤون الطلاب الذكي للأستاذ • برنامج Teacher الذكي</p>
-            <div className="flex items-center gap-2.5">
-              <span className="bg-slate-200 text-slate-650 border border-slate-300 px-2 py-0.5 rounded font-mono">v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</span>
-              <p className="text-slate-400 font-semibold text-left">تم التطوير بامتياز بواسطة المُبرمج <span className="text-indigo-600 font-black">Mohamed Abdella</span></p>
-            </div>
+        <footer className="bg-slate-50 border-t border-slate-200/80 py-8 text-center text-slate-400 text-xs font-bold print:hidden z-10 w-full mt-auto">
+          <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center gap-2.5 select-none font-sans">
+            <p className="text-slate-800 font-extrabold text-xs">تم تصميم البرنامج بواسطة</p>
+            <p className="text-indigo-600 font-black text-sm">Mohamed Abdella ( Abo Silem )</p>
+            <p className="text-[11px] text-slate-450 font-extrabold">عام {new Date().getFullYear()} • نسخة البرنامج v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</p>
           </div>
         </footer>
       </div>
@@ -1285,37 +1374,33 @@ export default function App() {
               </div>
 
               {/* Body - Case 1: Synced (Success) */}
-              {syncState === 'synced' && (
+              {(syncState === 'synced' || syncState === 'syncing') && (
                 <div className="space-y-4">
-                  <div className="bg-emerald-500/5 border border-emerald-500/15 p-4 rounded-2xl flex items-start gap-3">
-                    <span className="text-xl shrink-0">✅</span>
-                    <div className="text-xs text-emerald-800 leading-relaxed font-bold">
-                      تم مزامنة بيانات الطلاب والحصص والإعدادات مع السحابة الفيدرالية بنجاح تام وبشكل آمن! جميع بياناتك محدثة ولا توجد أي مشاكل مفقودة.
+                  {preferences.autoBackupDownloadInterval === 'disabled' ? (
+                    <div className="bg-amber-500/5 border border-amber-500/15 p-4 rounded-2xl flex items-start gap-3">
+                      <span className="text-xl shrink-0">📴</span>
+                      <div className="text-xs text-amber-800 leading-relaxed font-bold">
+                        تم إيقاف المزامنة والنسخ التلقائي بناءً على اختيارك. بياناتك تُحفظ حالياً في ذاكرة هاتفك/متصفحك فقط. للنسخ المتطابق مع السحابة، يرجى إجراء مزامنة يدوية بالضغط على الزر أدناه.
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-emerald-500/5 border border-emerald-500/15 p-4 rounded-2xl flex items-start gap-3">
+                      <span className="text-xl shrink-0">✅</span>
+                      <div className="text-xs text-emerald-800 leading-relaxed font-bold">
+                        تم مزامنة بيانات الطلاب والحصص والإعدادات مع السحابة الفيدرالية بنجاح تام وبشكل آمن! جميع بياناتك محدثة ولا توجد أي مشاكل مفقودة.
+                      </div>
+                    </div>
+                  )}
                   
                   <div className="text-xs text-slate-500 space-y-2 font-semibold">
                     <p className="font-extrabold text-slate-700">📌 معلومات نظام الاتصال السحابي:</p>
                     <div className="bg-slate-50 p-3 rounded-xl space-y-1.5 font-mono text-[11px] text-slate-650">
                       <div>• معرّف المستخدم الموثق: {currentUserId}</div>
                       <div>• حالة اتصال الشبكة: متصل (قاعدة بيانات Firestore)</div>
-                      <div>• جودة الاتصال والمزامنة: مستقرة ومؤمنة (المزامنة صحيحة ✅)</div>
+                      <div>• المزامنة التلقائية: {preferences.autoBackupDownloadInterval === 'disabled' ? 'معطلة ❌' : 'مفعلة تلقائيًا 🟢'}</div>
+                      <div>• حالة التزامن الحالي: {preferences.autoBackupDownloadInterval === 'disabled' ? 'محلي (اضغط زر المزامنة للحفظ يدويًا)' : 'مستمر وتلقائي'}</div>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* Body - Case 2: Syncing */}
-              {syncState === 'syncing' && (
-                <div className="space-y-4 text-center py-6">
-                  <div className="relative inline-flex h-12 w-12 rounded-full justify-center items-center bg-indigo-50 text-indigo-600 mb-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-20"></span>
-                    <Cloud size={20} className="animate-bounce" />
-                  </div>
-                  <h4 className="text-sm font-extrabold text-indigo-900">جاري الحفظ والتزامن السحابي الآن...</h4>
-                  <p className="text-xs text-slate-500 leading-relaxed px-4">
-                    يرجى الانتظار للحظة، نقوم بتحليل التعديلات لتنظيم وتوثيق السجلات السحابية الجديدة تلقائياً.
-                  </p>
                 </div>
               )}
 
@@ -1352,19 +1437,21 @@ export default function App() {
 
               {/* Actions footer */}
               <div className="flex gap-2.5 mt-6 pt-4 border-t border-slate-100">
-                {syncState === 'error' && (
+                {(syncState === 'error' || preferences.autoBackupDownloadInterval === 'disabled') && (
                   <button
-                    onClick={triggerManualCloudSync}
+                    onClick={async () => {
+                      await triggerManualCloudSync();
+                    }}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold py-2.5 px-4 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/15"
                   >
-                    إعادة المحاولة الآن 🔄
+                    {syncState === 'syncing' ? 'جاري التحديث... ⏳' : 'مزامنة يدوية الآن 🔄'}
                   </button>
                 )}
                 <button
                   onClick={() => setShowSyncErrorModal(false)}
-                  className="flex-1 bg-slate-100 hover:bg-slate-255 text-slate-700 text-xs font-extrabold py-2.5 px-4 rounded-xl transition-all"
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold py-2.5 px-4 rounded-xl transition-all"
                 >
-                  إغلاق نافذة الدعم
+                  إغلاق النافذة
                 </button>
               </div>
             </motion.div>

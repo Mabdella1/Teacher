@@ -47,7 +47,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   const errMsg = error instanceof Error ? error.message : String(error);
   const isOffline = errMsg.toLowerCase().includes('offline') || 
                     errMsg.toLowerCase().includes('network') || 
-                    errMsg.toLowerCase().includes('unavailable');
+                    errMsg.toLowerCase().includes('unavailable') ||
+                    errMsg.toLowerCase().includes('failed to get document') ||
+                    errMsg.toLowerCase().includes('could not reach') ||
+                    errMsg.toLowerCase().includes('internet') ||
+                    errMsg.toLowerCase().includes('connectivity') ||
+                    errMsg.toLowerCase().includes('connection');
 
   const errInfo: FirestoreErrorInfo = {
     error: errMsg,
@@ -78,6 +83,35 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 /**
+ * Recursively removes all undefined fields from an object, replacing them with null,
+ * or omitting them entirely from keys to satisfy Firestore constraints.
+ */
+function sanitizeUndefined(obj: any): any {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeUndefined(item));
+  }
+  if (typeof obj === 'object') {
+    const newObj: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) {
+          newObj[key] = sanitizeUndefined(val);
+        }
+      }
+    }
+    return newObj;
+  }
+  return obj;
+}
+
+/**
  * Saves the entire teacher workspace state to Firestore.
  */
 export async function saveWorkspaceToCloud(userId: string, data: Omit<WorkspaceData, 'userId' | 'updatedAt'>): Promise<void> {
@@ -88,7 +122,8 @@ export async function saveWorkspaceToCloud(userId: string, data: Omit<WorkspaceD
       userId,
       updatedAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, 'teachers', userId), payload);
+    const sanitizedPayload = sanitizeUndefined(payload);
+    await setDoc(doc(db, 'teachers', userId), sanitizedPayload);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, docPath);
   }
