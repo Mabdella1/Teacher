@@ -38,7 +38,12 @@ const DEFAULT_SETTINGS: NotificationSettings = {
   // Do Not Disturb (DND) settings
   dndEnabled: false,
   dndStart: '22:00',
-  dndEnd: '08:00'
+  dndEnd: '08:00',
+
+  // Customizable student portal alert settings
+  sendStudentClassReminders: true,
+  sendStudentPaymentReminders: true,
+  sendStudentCompletionReminders: true
 };
 
 const DAYS_AR_MAP: { [key: number]: string } = {
@@ -138,6 +143,7 @@ export default function NotificationCenter({ students, appointments, currency, p
   const [successMsg, setSuccessMsg] = useState('');
   const [sysTimeState, setSysTimeState] = useState(new Date());
   const [openTemplatesAlertId, setOpenTemplatesAlertId] = useState<string | null>(null);
+  const [showConfirmDeleteAll, setShowConfirmDeleteAll] = useState(false);
 
   // Push Permission State
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
@@ -685,6 +691,31 @@ export default function NotificationCenter({ students, appointments, currency, p
     triggerToast('تمت استعادة وعرض كافة التنبيهات النشطة المخفية!');
   };
 
+  const handleDeleteAllNotifications = () => {
+    setShowConfirmDeleteAll(true);
+  };
+
+  const executeDeleteAllNotifications = () => {
+    // 1. Dismiss all activeAlerts & dynamic/computed teacher alerts
+    const activeAlertIds = activeAlerts.map(a => a.id);
+    const dynamicTeacherAlertIds = computedTeacherAlerts.map(a => a.id);
+    const allDismissableIds = [...activeAlertIds, ...dynamicTeacherAlertIds];
+    
+    const updatedDismissed = Array.from(new Set([...dismissedAlerts, ...allDismissableIds]));
+    setDismissedAlerts(updatedDismissed);
+    localStorage.setItem('teacherDismissedAlerts', JSON.stringify(updatedDismissed));
+
+    // 2. Clear teacherAlerts
+    setTeacherAlerts([]);
+    localStorage.setItem('teacherActionAlerts', JSON.stringify([]));
+    
+    // Trigger storage dispatch
+    window.dispatchEvent(new Event('teacherAlertsUpdated'));
+    
+    triggerToast('تم مسح وتصفير كافة الإشعارات بنجاح! 🧹');
+    setShowConfirmDeleteAll(false);
+  };
+
   return (
     <div id="notification-center-root" className="relative print:hidden">
       {/* Visual Bell indicator triggering button */}
@@ -738,15 +769,29 @@ export default function NotificationCenter({ students, appointments, currency, p
               className="fixed xs:absolute left-4 right-4 md:left-0 md:right-auto md:w-96 top-24 md:top-14 mt-1 bg-white border border-slate-200 rounded-3xl shadow-2xl z-50 p-5 font-sans text-right text-slate-800 flex flex-col max-h-[80vh] overflow-hidden"
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-3.5">
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="p-1 mb-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-105 rounded-lg transition-colors cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-slate-900">مركز الإشراقات وتذكير المواعيد</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="p-1 mb-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                  
+                  {(activeAlerts.length > 0 || computedTeacherAlerts.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAllNotifications}
+                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 hover:text-rose-800 text-[10px] font-black rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                      title="حذف جميع الإشعارات دفعة واحدة"
+                    >
+                      <span>حذف الكل 🗑️</span>
+                    </button>
+                  )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-black text-slate-900 font-sans">الإشعارات</span>
                   <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
                 </div>
               </div>
@@ -792,6 +837,37 @@ export default function NotificationCenter({ students, appointments, currency, p
               {successMsg && (
                 <div className="mb-3 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-150 py-1.5 px-3 rounded-lg text-center font-sans animate-in fade-in duration-205">
                   ✓ {successMsg}
+                </div>
+              )}
+
+              {/* Inline Confirm Delete All Notifications */}
+              {showConfirmDeleteAll && (
+                <div className="mb-3 p-3.5 bg-rose-50 border border-rose-150 rounded-2xl text-right animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex gap-2 items-start text-right">
+                    <span className="text-sm shrink-0">🗑️</span>
+                    <div className="flex-1">
+                      <h5 className="font-black text-rose-950 text-[11px] leading-tight mb-0.5">تأكيد تفريغ كافة الإشعارات؟</h5>
+                      <p className="text-[10px] font-sans font-medium text-slate-500 leading-normal">
+                        سيتم إخفاء ومسح كافة تنبيهات الطلاب وحركات المعلم بالكامل دفعة واحدة. هذه الخطوة نهائية لتصفير القائمة.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-3 font-bold text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmDeleteAll(false)}
+                      className="px-2.5 py-1 text-slate-650 hover:text-slate-800 bg-white border border-slate-200 rounded-lg cursor-pointer transition-colors"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="button"
+                      onClick={executeDeleteAllNotifications}
+                      className="px-2.5 py-1 text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer transition-colors shadow-xs"
+                    >
+                      نعم، احذف الكل
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1229,6 +1305,44 @@ export default function NotificationCenter({ students, appointments, currency, p
                             </button>
                           )}
                           <span className="text-[11px] font-bold text-slate-700">تفعيل إشعارات سطح المكتب / الهاتف (Push) 📱</span>
+                        </div>
+                      </div>
+
+                      {/* Section: Student Portal Alerts Customization */}
+                      <div className="p-4 bg-purple-50 border border-purple-100 rounded-2xl space-y-3">
+                        <span className="font-extrabold text-purple-900 text-xs block border-b border-purple-100 pb-1.5">تخصيص تنبيهات بوابة الطالب 🎓</span>
+                        
+                        <div className="flex justify-between items-center">
+                          <button
+                            type="button"
+                            onClick={() => saveSettings({ ...settings, sendStudentClassReminders: settings.sendStudentClassReminders !== false ? false : true })}
+                            className="text-purple-600 cursor-pointer hover:opacity-85"
+                          >
+                            {settings.sendStudentClassReminders !== false ? <ToggleRight size={22} className="text-purple-600" /> : <ToggleLeft size={22} className="text-slate-400" />}
+                          </button>
+                          <span className="text-[11px] font-bold text-slate-700">تنبيه بحصص الطالب القادمة اليومية 📆</span>
+                        </div>
+
+                        <div className="flex justify-between items-center border-t border-purple-105 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => saveSettings({ ...settings, sendStudentPaymentReminders: settings.sendStudentPaymentReminders !== false ? false : true })}
+                            className="text-purple-600 cursor-pointer hover:opacity-85"
+                          >
+                            {settings.sendStudentPaymentReminders !== false ? <ToggleRight size={22} className="text-purple-600" /> : <ToggleLeft size={22} className="text-slate-400" />}
+                          </button>
+                          <span className="text-[11px] font-bold text-slate-700">تنبيهات بمستحقات الدفع والرسوم 💰</span>
+                        </div>
+
+                        <div className="flex justify-between items-center border-t border-purple-105 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => saveSettings({ ...settings, sendStudentCompletionReminders: settings.sendStudentCompletionReminders !== false ? false : true })}
+                            className="text-purple-600 cursor-pointer hover:opacity-85"
+                          >
+                            {settings.sendStudentCompletionReminders !== false ? <ToggleRight size={22} className="text-purple-600" /> : <ToggleLeft size={22} className="text-slate-400" />}
+                          </button>
+                          <span className="text-[11px] font-bold text-slate-700">تنبيه باقتراب موعد تجديد/نهاية الكورس 🏆</span>
                         </div>
                       </div>
                     </div>

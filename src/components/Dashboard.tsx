@@ -486,81 +486,81 @@ export default function Dashboard({ students, appointments, preferences, onSelec
       {/* 2. Key Metrics Widgets Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Metric 1: Total Payments Received */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/2 rounded-full translate-x-3 -translate-y-3" />
+        {/* Metric 1: Total Payments Received (GREEN) */}
+        <div className="bg-emerald-50/40 border-2 border-emerald-500 rounded-2xl p-4.5 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-md group">
+          <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500" />
           <div className="flex items-center justify-between">
-            <div className="space-y-1 text-right font-sans">
-              <span className="text-xs text-slate-450 font-black block leading-none">الإيرادات المحصلة (كاش)</span>
-              <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-none tracking-tight flex items-baseline gap-1 py-1">
-                {metrics.totalPaymentsReceived.toLocaleString('ar-EG')} <span className="text-xs font-black text-slate-450">{currency}</span>
+            <div className="space-y-1 text-right font-sans pr-1">
+              <span className="text-xs text-emerald-805 font-black block leading-none select-none">الإيرادات المحصلة (كاش) 🟢</span>
+              <h3 className="text-xl sm:text-2xl font-black text-emerald-700 leading-none tracking-tight flex items-baseline gap-1 py-1">
+                {metrics.totalPaymentsReceived.toLocaleString('ar-EG')} <span className="text-xs font-black text-emerald-600">{currency}</span>
               </h3>
-              <p className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1 flex-wrap">
+              <p className="text-[10px] text-emerald-600/80 font-bold flex items-center gap-1 flex-wrap">
                 <TrendingUp size={11} />
-                <span>اليوم: <span className="underline decoration-wavy decoration-emerald-400">{metrics.dailyEarnings.toLocaleString('ar-EG')}</span> • الأسبوع: <span className="underline decoration-wavy decoration-emerald-400">{metrics.weeklyEarnings.toLocaleString('ar-EG')}</span> {currency}</span>
+                <span>اليوم: {metrics.dailyEarnings.toLocaleString('ar-EG')} • الأسبوع: {metrics.weeklyEarnings.toLocaleString('ar-EG')} {currency}</span>
               </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 group-hover:scale-110 transition-transform duration-200">
+            <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center border border-emerald-400 shadow-3xs group-hover:scale-110 transition-transform duration-200">
               <Coins size={18} />
             </div>
           </div>
         </div>
 
-        {/* Metric 2: Estimated Earnings */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/2 rounded-full translate-x-3 -translate-y-3" />
+        {/* Metric 2: Estimated Earnings (INDIGO/VIOLET) */}
+        <div className="bg-violet-50/40 border-2 border-violet-500 rounded-2xl p-4.5 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-md group">
+          <div className="absolute top-0 right-0 w-2 h-full bg-violet-500" />
           <div className="flex items-center justify-between">
-            <div className="space-y-1 text-right">
-              <span className="text-xs text-slate-450 font-black block leading-none">أرباح الحصص المنفذة</span>
-              <h3 className="text-xl sm:text-2xl font-black text-indigo-650 leading-none tracking-tight flex items-baseline gap-1 py-1">
-                {metrics.totalExpectedEarnings.toLocaleString('ar-EG')} <span className="text-xs font-black text-slate-450">{currency}</span>
+            <div className="space-y-1 text-right pr-1">
+              <span className="text-xs text-violet-805 font-black block leading-none select-none">أرباح الحصص المنفذة 🎯</span>
+              <h3 className="text-xl sm:text-2xl font-black text-violet-750 leading-none tracking-tight flex items-baseline gap-1 py-1">
+                {metrics.totalExpectedEarnings.toLocaleString('ar-EG')} <span className="text-xs font-black text-violet-650">{currency}</span>
               </h3>
-              <p className="text-[10px] text-indigo-500 font-extrabold flex items-center gap-1">
-                <CheckCircle2 size={11} className="text-indigo-400" />
+              <p className="text-[10px] text-violet-600/80 font-bold flex items-center gap-1">
+                <CheckCircle2 size={11} className="text-violet-550" />
                 <span>قيمة المجهود والدروس الفعلية</span>
               </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 group-hover:scale-110 transition-transform duration-200">
+            <div className="w-11 h-11 rounded-xl bg-violet-600 text-white flex items-center justify-center border border-violet-500 shadow-3xs group-hover:scale-110 transition-transform duration-200">
               <Award size={18} />
             </div>
           </div>
         </div>
 
-        {/* Metric 3: Outstanding / Pending */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/2 rounded-full translate-x-3 -translate-y-3" />
+        {/* Metric 3: Outstanding / Pending (ROSE/RED) */}
+        <div className="bg-rose-50/40 border-2 border-rose-500 rounded-2xl p-4.5 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-md group">
+          <div className="absolute top-0 right-0 w-2 h-full bg-rose-500" />
           <div className="flex items-center justify-between">
-            <div className="space-y-1 text-right">
-              <span className="text-xs text-slate-450 font-black block leading-none">المستحقات المتبقية</span>
-              <h3 className="text-xl sm:text-2xl font-black text-amber-650 leading-none tracking-tight flex items-baseline gap-1 py-1">
-                {metrics.totalOutstandingBalance.toLocaleString('ar-EG')} <span className="text-xs font-black text-slate-450">{currency}</span>
+            <div className="space-y-1 text-right pr-1">
+              <span className="text-xs text-rose-805 font-black block leading-none select-none">المستحقات المتبقية 🔴</span>
+              <h3 className="text-xl sm:text-2xl font-black text-rose-700 leading-none tracking-tight flex items-baseline gap-1 py-1">
+                {metrics.totalOutstandingBalance.toLocaleString('ar-EG')} <span className="text-xs font-black text-rose-600">{currency}</span>
               </h3>
-              <p className="text-[10px] text-amber-600 font-extrabold flex items-center gap-1">
-                <AlertCircle size={11} className="text-amber-500" />
+              <p className="text-[10px] text-rose-600/80 font-bold flex items-center gap-1">
+                <AlertCircle size={11} className="text-rose-500" />
                 <span>مستحق السداد والتحصيل قريباً</span>
               </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 group-hover:scale-110 transition-transform duration-200">
+            <div className="w-11 h-11 rounded-xl bg-rose-550 text-white flex items-center justify-center border border-rose-500 shadow-3xs group-hover:scale-110 transition-transform duration-200">
               <DollarSign size={18} />
             </div>
           </div>
         </div>
 
-        {/* Metric 4: Registered/Active Students */}
-        <div className="bg-white border border-slate-200/90 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs transition-shadow duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/2 rounded-full translate-x-3 -translate-y-3" />
+        {/* Metric 4: Registered/Active Students (BLUE) */}
+        <div className="bg-blue-50/40 border-2 border-blue-500 rounded-2xl p-4.5 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-md group">
+          <div className="absolute top-0 right-0 w-2 h-full bg-blue-500" />
           <div className="flex items-center justify-between">
-            <div className="space-y-1 text-right">
-              <span className="text-xs text-slate-450 font-black block leading-none">الطلاب النشطون</span>
-              <h3 className="text-xl sm:text-2xl font-black text-slate-850 leading-none tracking-tight flex items-baseline gap-1.5 py-1">
-                {metrics.activeStudents} <span className="text-xs font-black text-slate-400">من {metrics.totalStudents}</span>
+            <div className="space-y-1 text-right pr-1">
+              <span className="text-xs text-blue-805 font-black block leading-none select-none">الطلاب النشطون 👥</span>
+              <h3 className="text-xl sm:text-2xl font-black text-blue-700 leading-none tracking-tight flex items-baseline gap-1.5 py-1">
+                {metrics.activeStudents} <span className="text-xs font-black text-blue-500">من {metrics.totalStudents}</span>
               </h3>
-              <p className="text-[10px] text-blue-600 font-extrabold flex items-center gap-1">
+              <p className="text-[10px] text-blue-600/85 font-bold flex items-center gap-1">
                 <Users size={11} />
                 <span>{metrics.lessonStudents} حصص • {metrics.courseStudents} كورسات</span>
               </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 group-hover:scale-110 transition-transform duration-200">
+            <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center border border-blue-500 shadow-3xs group-hover:scale-110 transition-transform duration-200">
               <Users size={18} />
             </div>
           </div>

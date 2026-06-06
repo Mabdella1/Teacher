@@ -35,6 +35,17 @@ export interface StudyNote {
   title?: string; // Optional title for the note
 }
 
+export interface EarnedBadge {
+  id: string;
+  name: string;
+  description: string;
+  earnedDate: string;
+  requirementType: 'lessons' | 'course_complete' | 'other';
+  requirementValue: number;
+  pointsAwarded: number;
+  icon: string;
+}
+
 export interface Student {
   id: string;
   name: string;
@@ -66,6 +77,7 @@ export interface Student {
   overallEvaluation?: 'ممتاز' | 'جيد جداً' | 'جيد' | 'مقبول' | 'ضعيف';
   overallEvaluationNotes?: string;
   cardColor?: string; // Hex color for ID card accent
+  earnedBadges?: EarnedBadge[]; // custom system of rewards
 }
 
 export interface Appointment {
@@ -129,6 +141,11 @@ export interface NotificationSettings {
   dndEnabled?: boolean;
   dndStart?: string; // HH:MM format
   dndEnd?: string; // HH:MM format
+
+  // Customizable alert toggles for student portal
+  sendStudentClassReminders?: boolean;
+  sendStudentPaymentReminders?: boolean;
+  sendStudentCompletionReminders?: boolean;
 }
 
 export interface AppNotification {

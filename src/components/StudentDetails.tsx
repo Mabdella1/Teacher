@@ -5,7 +5,7 @@ import {
   Trash2, Phone, Sparkles, CheckCircle, HelpCircle, CalendarCheck, CreditCard, 
   TrendingUp, AlertTriangle, FileText, Download, Loader2, User, Camera, Upload, X,
   Award, Gift, History, Edit, Share2, Send, Filter, BookOpen, MessageCircle,
-  GraduationCap
+  GraduationCap, Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -34,10 +34,10 @@ export default function StudentDetails({
   preferences 
 }: StudentDetailsProps) {
   const studentAppointments = appointments?.filter(appt => appt.studentId === student.id) || [];
-  const [activeTab, setActiveTab] = useState<'sessions' | 'payments' | 'rewards' | 'studyNotes' | 'whatsAppTemplates' | 'chat'>('sessions');
+  const [activeTab, setActiveTab] = useState<'sessions' | 'payments' | 'rewards' | 'studyNotes' | 'whatsAppTemplates'>('sessions');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'session-over-limit' | 'delete-session' | 'delete-payment' | 'print-error';
+    type: 'session-over-limit' | 'delete-session' | 'delete-payment' | 'print-error' | 'delete-reward-tx' | 'clear-reward-txs';
     data?: any;
   } | null>(null);
 
@@ -253,6 +253,62 @@ export default function StudentDetails({
   const [customRewardPoints, setCustomRewardPoints] = useState('');
   const [customRewardDiscount, setCustomRewardDiscount] = useState('');
   const [customRewardNotes, setCustomRewardNotes] = useState('');
+
+  // States for dynamic editing of active point balances, catalog titles/prizes, and catalog points:
+  const [isEditingActivePoints, setIsEditingActivePoints] = useState(false);
+  const [editActivePointsValue, setEditActivePointsValue] = useState(String(student.rewardPoints || 0));
+  
+  interface CatalogItem {
+    id: string;
+    title: string;
+    description: string;
+    points: number;
+    amount: number;
+    type: 'discount' | 'free_class';
+  }
+
+  const [catalog, setCatalog] = useState<CatalogItem[]>(() => {
+    const stored = localStorage.getItem('teacherRewardCatalog');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [
+      {
+        id: 'pkg_a',
+        title: 'كوبون خصم بقيمة 20',
+        description: 'يخصم القيمة تالياً من المديونية التراكمية الإجمالية للطالب.',
+        points: 50,
+        amount: 20,
+        type: 'discount'
+      },
+      {
+        id: 'pkg_b',
+        title: 'كوبون خصم بقيمة 50',
+        description: 'خصم فوري لحساب الطالب يتم احتسابه وتسجيله في كشف الحساب.',
+        points: 100,
+        amount: 50,
+        type: 'discount'
+      },
+      {
+        id: 'pkg_c',
+        title: 'حصة دراسية مجانية 🎁',
+        description: 'إعفاء لحصة فردية أو خصم معادل لرسوم حصة إضافية بموجب نقاط الجوائز والولاء.',
+        points: 120,
+        amount: 100,
+        type: 'free_class'
+      }
+    ];
+  });
+
+  const [editingCatalogItemId, setEditingCatalogItemId] = useState<string | null>(null);
+  const [editCatalogTitle, setEditCatalogTitle] = useState('');
+  const [editCatalogPoints, setEditCatalogPoints] = useState('');
+  const [editCatalogAmount, setEditCatalogAmount] = useState('');
+  const [editCatalogDescription, setEditCatalogDescription] = useState('');
 
   useEffect(() => {
     if (isOpenPaymentForm) {
@@ -524,6 +580,82 @@ export default function StudentDetails({
     setIsOpenSessionForm(false);
   };
 
+  // Export active student detailed ledger as an beautifully presented, high-compatibility CSV (UTF-8 BOM support for Excel)
+  const handleExportStudentRecords = () => {
+    let csvContent = "\uFEFF"; // UTF-8 BOM byte sequence
+    
+    // Header cards meta
+    csvContent += `سجل الطالب التفصيلي الشامل,,,,,,\n`;
+    csvContent += `اسم الطالب:,${student.name || 'مجهول'},,,,,\n`;
+    csvContent += `رقم الهاتف المعين:,${student.phone || 'غير مسجل'},,,,,\n`;
+    csvContent += `نظام الاشتراك للمحاسبة:,${student.type === 'course' ? 'باقة الكورس المغلق' : 'الحساب بالحصة الفردية'},,,,,\n`;
+    csvContent += `إجمالي المستخلصات المدفوعة:,${totalPaid} ${currency},,,,,\n`;
+    csvContent += `المتبقي المعلق للدفع:,${outstandingBalance} ${currency},,,,,\n`;
+    csvContent += `تاريخ ووقت استخراج التقرير:,${new Date().toLocaleString('ar-EG')},,,,,\n\n`;
+
+    // Section 1: Sessions
+    csvContent += `أولاً: جدول توثيق حصص وعمليات حضور وانصراف الطالب\n`;
+    csvContent += `الترتيب,التاريخ,التوقيت,تصنيف الحصة,معدل السعر الفوري,الملاحظات والتقييمات\n`;
+
+    if (student.sessions && student.sessions.length > 0) {
+      student.sessions.forEach((s, idx) => {
+        const typeLabel = s.isExtra ? 'حصة إضافية تكميلية' : 'حصة دورية أساسية';
+        const cost = s.isExtra ? (s.extraPrice || student.lessonRate || 0) : (student.lessonRate || 0);
+        const notesStr = (s.notes || 'تم الحضور بانتظام').replace(/"/g, '""');
+        csvContent += `${idx + 1},"${s.date}","${s.time || '16:00'}","${typeLabel}","${cost} ${currency}","${notesStr}"\n`;
+      });
+    } else {
+      csvContent += `-, -, -, لا يوجد حصص حضور, -, -\n`;
+    }
+
+    csvContent += `\n`;
+
+    // Section 2: Study notes
+    csvContent += `ثانياً: سجل مذكرات وتنبيهات الأستاذ والمتابعة الدراسية\n`;
+    csvContent += `الترتيب,التاريخ والوقت,نوع التوجيه,مضمون التعليق الأكاديمي والواجبات\n`;
+
+    if (student.studyNotes && student.studyNotes.length > 0) {
+      student.studyNotes.forEach((n, idx) => {
+        let typeStr = 'توجيه عام';
+        if (n.type === 'academic') typeStr = 'تحصيل أكاديمي';
+        if (n.type === 'behavior') typeStr = 'أدبي وسلوكي';
+        if (n.type === 'homework') typeStr = 'الواجب المنزلي';
+        if (n.type === 'exam') typeStr = 'نتيجة اختبار شهري';
+        
+        const contentStr = n.content.replace(/"/g, '""');
+        csvContent += `${idx + 1},"${n.date.split('T')[0]}","${typeStr}","${contentStr}"\n`;
+      });
+    } else {
+      csvContent += `-, -, لا يوجد تعليقات أكاديمية مسجلة بعد, -\n`;
+    }
+
+    csvContent += `\n`;
+
+    // Section 3: Payments ledger
+    csvContent += `ثالثاً: كشوف وحوالات تحصيل الدفعات كاش ومحافظ إلكترونية\n`;
+    csvContent += `الترتيب,التاريخ المالي,القيمة المالية المسددة,بيانات الإيصال والملاحظات\n`;
+
+    if (student.payments && student.payments.length > 0) {
+      student.payments.forEach((p, idx) => {
+        const notesStr = (p.notes || 'دفعة نقدية معتمدة').replace(/"/g, '""');
+        csvContent += `${idx + 1},"${p.date}","${p.amount} ${currency}","${notesStr}"\n`;
+      });
+    } else {
+      csvContent += `-, -, لا يوجد أي مدفوعات, -\n`;
+    }
+
+    // Trigger file download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `سجل_الطالب_${student.name.replace(/\s+/g, '_')}_التفصيلي.csv`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleQuickRegisterSession = () => {
     const isOverLimit = student.type === 'course' && student.totalLessonsCount !== undefined && standardSessionsCount >= student.totalLessonsCount;
     const local = new Date();
@@ -679,6 +811,90 @@ export default function StudentDetails({
       rewardPoints: newPoints,
       rewardTransactions: updatedTxs,
       payments: updatedPayments
+    });
+  };
+
+  const handleRedeemCatalogItem = (item: CatalogItem) => {
+    const currentPoints = student.rewardPoints || 0;
+    const costPoints = item.points;
+    let discountAmount = item.amount;
+    
+    if (item.type === 'free_class') {
+      discountAmount = student.type === 'lesson' ? (student.lessonRate || 100) : item.amount;
+    }
+    
+    if (currentPoints < costPoints) {
+      alert(`عفواً، رصيد نقاط الطالب غير كافٍ! يحتاج الطالب إلى ${costPoints} نقطة لشحن هذه المكافأة، بينما يمتلك حالياً ${currentPoints} نقطة.`);
+      return;
+    }
+    
+    const description = `🎁 استرداد مكافأة: ${item.title} (تكلفة ${costPoints} نقطة)`;
+    const reason = item.type === 'free_class' ? ('redeem_free_session' as const) : ('redeem_discount' as const);
+    
+    // Process points conversion
+    const newPoints = currentPoints - costPoints;
+    const newTx: RewardTransaction = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+      type: 'redeem',
+      amount: costPoints,
+      reason: reason,
+      description: description,
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    // Process the reward discount as a virtual payment so user's financial balances are automatically lowered & updated!
+    const newPayment: Payment = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+      amount: discountAmount,
+      date: new Date().toISOString().split('T')[0],
+      notes: `🎁 استرداد نقاط مكافأة (${costPoints} نقطة) - للعملية: ${item.title}`
+    };
+    
+    const updatedPayments = [newPayment, ...student.payments];
+    const updatedTxs = [newTx, ...(student.rewardTransactions || [])];
+    
+    onUpdateStudent(student.id, {
+      rewardPoints: newPoints,
+      rewardTransactions: updatedTxs,
+      payments: updatedPayments
+    });
+  };
+
+  const handleDeleteRewardTransaction = (txId: string) => {
+    setConfirmDialog({ type: 'delete-reward-tx', data: txId });
+  };
+
+  const executeDeleteRewardTransaction = (txId: string) => {
+    const txs = student.rewardTransactions || [];
+    const targetTx = txs.find(t => String(t.id) === String(txId));
+    if (!targetTx) return;
+
+    const currentPoints = Number(student.rewardPoints) || 0;
+    const txAmount = Number(targetTx.amount) || 0;
+
+    let reversedPoints = currentPoints;
+    if (targetTx.type === 'earn') {
+      reversedPoints = Math.max(0, currentPoints - txAmount);
+    } else {
+      reversedPoints = currentPoints + txAmount;
+    }
+
+    const filteredTxs = txs.filter(t => String(t.id) !== String(txId));
+
+    onUpdateStudent(student.id, {
+      rewardPoints: reversedPoints,
+      rewardTransactions: filteredTxs
+    });
+  };
+
+  const handleClearRewardTransactions = () => {
+    setConfirmDialog({ type: 'clear-reward-txs' });
+  };
+
+  const executeClearRewardTransactions = () => {
+    onUpdateStudent(student.id, {
+      rewardPoints: 0,
+      rewardTransactions: []
     });
   };
 
@@ -1068,58 +1284,58 @@ export default function StudentDetails({
   return (
     <div className="space-y-6">
       {/* Navigation Top Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4.5 bg-slate-50 border border-slate-200/60 p-3.5 rounded-2xl shadow-3xs">
-        {/* Academic Profile Actions (Left Side) - Edit and Delete Student */}
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-slate-50 border border-slate-200/60 p-3 rounded-2xl shadow-3xs">
+        {/* Academic Profile Actions (Left Side) - Edit and Delete Student inline */}
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <button
             onClick={openEditModal}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl transition-all font-black text-xs cursor-pointer shadow-md shadow-blue-500/10 active:scale-95 duration-200"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl transition-all font-black text-xs cursor-pointer shadow-md shadow-blue-500/10 active:scale-95 duration-150"
           >
-            <Edit size={15} />
-            <span>تعديل تفاصيل الطالب</span>
+            <Edit size={14} />
+            <span className="whitespace-nowrap">تعديل تفاصيل الطالب</span>
           </button>
 
           <button
             onClick={() => setIsOpenDeleteConfirmModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl transition-all font-black text-xs cursor-pointer shadow-sm active:scale-95 duration-200"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl transition-all font-black text-xs cursor-pointer shadow-sm active:scale-95 duration-150"
           >
-            <Trash2 size={15} />
-            <span>حذف الطالب من النظام</span>
+            <Trash2 size={14} />
+            <span className="whitespace-nowrap">حذف الطالب</span>
           </button>
         </div>
 
-        {/* Identity Printing and Badging (Right Side) */}
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+        {/* Identity Printing and Export (Right Side side-by-side) */}
+        <div className="flex flex-wrap items-center gap-2.5 mt-3 lg:mt-0">
           <button
             onClick={handleExportDetailedPDF}
             disabled={isGeneratingPDF}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-200 disabled:opacity-50"
-            title="تنزيل تقرير كامل بصيغة PDF يحتوي على جميع الحصص والملاحظات الدراسية والمدفوعات"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-150 disabled:opacity-50"
+            title="تصدير بصيغة PDF"
           >
             {isGeneratingPDF ? (
-              <Loader2 size={15} className="animate-spin text-indigo-600" />
+              <Loader2 size={13} className="animate-spin text-indigo-600" />
             ) : (
-              <FileText size={15} className="text-indigo-600" />
+              <FileText size={13} className="text-indigo-600" />
             )}
-            <span>تصدير السجل (PDF) 📄</span>
+            <span className="whitespace-nowrap">تصدير PDF</span>
           </button>
 
           <button
             onClick={handleExportIndividualCSV}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-200"
-            title="تنزيل السجل التفصيلي الشامل لكل الحصص والملاحظات الأكاديمية والمدفوعات بصيغة CSV"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-150"
+            title="تصدير بصيغة CSV"
           >
-            <FileSpreadsheet size={15} className="text-amber-600" />
-            <span>تصدير السجل (CSV) 📊</span>
+            <FileSpreadsheet size={13} className="text-amber-600" />
+            <span className="whitespace-nowrap">تصدير CSV</span>
           </button>
 
           <button
             onClick={() => setIsCardModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-200"
-            title="توليد وتنزيل بطاقة الهوية الأكاديمية للطالب مع رمز QR الفريد الخاص به"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all font-bold text-xs cursor-pointer shadow-sm active:scale-95 duration-150"
+            title="طباعة بطاقة الطالب"
           >
-            <CreditCard size={15} className="text-emerald-600" />
-            <span>طباعة بطاقة الطالب 💳</span>
+            <CreditCard size={13} className="text-emerald-600" />
+            <span className="whitespace-nowrap">بطاقة الطالب</span>
           </button>
         </div>
       </div>
@@ -1785,39 +2001,52 @@ export default function StudentDetails({
         {/* Financial Stat boxes */}
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-sm">
-              <div className="absolute top-2 left-2 text-slate-100">
+            {/* Card 1: Total Cost */}
+            <div className="bg-violet-50/40 border-2 border-violet-500 rounded-2xl p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-3xs hover:shadow-xs transition-shadow duration-200">
+              <div className="absolute top-0 right-0 w-2 h-full bg-violet-500" />
+              <div className="absolute top-2 left-2 text-violet-200/50">
                 <TrendingUp size={36} />
               </div>
-              <p className="text-xs text-slate-500 font-bold">المستحقات والقيمة الكلية</p>
-              <div>
-                <span className="text-2xl font-black text-slate-800">{totalCost}</span>
-                <span className="text-xs text-slate-550 mr-1.5 font-medium">{currency}</span>
+              <p className="text-xs text-violet-850 font-black pr-2 select-none">المستحقات والقيمة الكلية</p>
+              <div className="pr-2">
+                <span className="text-2xl font-black text-violet-750">{totalCost}</span>
+                <span className="text-xs text-violet-600 mr-1.5 font-bold">{currency}</span>
               </div>
-              <p className="text-[9px] text-slate-400 font-semibold">
+              <p className="text-[9px] text-violet-500 pr-2 font-bold select-none">
                 {student.type === 'lesson' ? `عن الحصص المسجلة (${sessionsCount} حصة)` : 'إجمالي سعر الكورس'}
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-sm">
-              <div className="absolute top-2 left-2 text-emerald-100">
+            {/* Card 2: Total Paid */}
+            <div className="bg-emerald-50/40 border-2 border-emerald-500 rounded-2xl p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-3xs hover:shadow-xs transition-shadow duration-200">
+              <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500" />
+              <div className="absolute top-2 left-2 text-emerald-200/50">
                 <CreditCard size={36} />
               </div>
-              <p className="text-xs text-slate-500 font-bold">إجمالي المدفوعات المستلمة</p>
-              <div>
-                <span className="text-2xl font-black text-emerald-600">{totalPaid}</span>
-                <span className="text-xs text-emerald-600/80 mr-1.5 font-medium">{currency}</span>
+              <p className="text-xs text-emerald-850 font-black pr-2 select-none">إجمالي المدفوعات المستلمة</p>
+              <div className="pr-2">
+                <span className="text-2xl font-black text-emerald-700">{totalPaid}</span>
+                <span className="text-xs text-emerald-600 mr-1.5 font-bold">{currency}</span>
               </div>
-              <p className="text-[9px] text-slate-400 font-semibold">عبر {student.payments.length} دفعات كاش ومحافظ</p>
+              <p className="text-[9px] text-emerald-650 pr-2 font-bold select-none">عبر {student.payments.length} دفعات كاش ومحافظ</p>
             </div>
 
-            <div className={`premium-card p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-sm ${
+            {/* Card 3: Outstanding Balance */}
+            <div className={`border-2 rounded-2xl p-4 flex flex-col justify-between h-28 relative overflow-hidden shadow-3xs hover:shadow-xs transition-all duration-200 ${
               outstandingBalance > 0 
-                ? 'bg-red-50/70 border-red-200' 
+                ? 'bg-rose-50/40 border-rose-500 text-rose-800' 
                 : outstandingBalance < 0 
-                ? 'bg-emerald-50/70 border-emerald-250' 
-                : 'bg-white border border-slate-200'
+                ? 'bg-emerald-50/45 border-emerald-500 text-emerald-800' 
+                : 'bg-slate-50 border-slate-300 text-slate-800'
             }`}>
+              <div className={`absolute top-0 right-0 w-2 h-full ${
+                outstandingBalance > 0 
+                  ? 'bg-rose-500' 
+                  : outstandingBalance < 0 
+                  ? 'bg-emerald-500' 
+                  : 'bg-slate-400'
+              }`} />
+              
               {/* WhatsApp Quick Reminder button if there's an outstanding balance with registered telephone number */}
               {outstandingBalance > 0 && (
                 <div className="absolute top-3 left-3 z-10">
@@ -1850,122 +2079,124 @@ export default function StudentDetails({
                       id="whatsapp-direct-reminder-btn"
                     >
                       <MessageCircle size={12} className="text-white shrink-0" />
-                      <span>تذكير بالدفع 📱</span>
+                      <span>تذكير 📱</span>
                     </a>
                   ) : (
                     <span 
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-black cursor-not-allowed select-none"
+                      className="inline-flex items-center gap-1 px-2 py-1 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-black cursor-not-allowed select-none"
                       title="لا يوجد رقم هاتف مسجل لهذا الطالب"
                       id="whatsapp-direct-reminder-disabled"
                     >
                       <MessageCircle size={12} className="text-slate-350 shrink-0" />
-                      <span>بدون هاتف</span>
+                      <span>بلا هاتف</span>
                     </span>
                   )}
                 </div>
               )}
 
-              <p className="text-xs text-slate-500 font-bold">
+              <p className="text-xs font-black pr-2 select-none text-slate-650">
                 {outstandingBalance > 0 ? 'المتبقي والمطلوب تحصيله' : outstandingBalance < 0 ? 'رصيد زائد للطالب' : 'الحساب مقفل بالكامل'}
               </p>
-              <div>
+              <div className="pr-2">
                 <span className={`text-2xl font-black ${
                   outstandingBalance > 0 
-                    ? 'text-red-650' 
+                    ? 'text-rose-700' 
                     : outstandingBalance < 0 
                     ? 'text-emerald-700' 
-                    : 'text-slate-500'
+                    : 'text-slate-600'
                 }`}>
                   {Math.abs(outstandingBalance)}
                 </span>
-                <span className="text-xs mr-1.5 font-medium text-slate-400">{currency}</span>
+                <span className="text-xs mr-1.5 font-bold text-slate-400">{currency}</span>
               </div>
-              <p className="text-[9px] text-slate-400 font-semibold">
-                {outstandingBalance > 0 ? 'الرجاء تذكير الطالب بالدفع' : outstandingBalance < 0 ? 'رصيد لصالح الطالب للحصص القادمة' : 'مسدد بالكامل ممتاز'}
+              <p className="text-[9px] pr-2 font-bold select-none text-slate-450">
+                {outstandingBalance > 0 ? 'الرجاء تذكير الطالب بالدفع النبيل' : outstandingBalance < 0 ? 'رصيد لصالح الطالب للحصص القادمة' : 'مسدد بالكامل ممتاز جداً'}
               </p>
             </div>
           </div>
 
           {/* Quick Registry Buttons */}
-          <div className="flex flex-wrap gap-3">
+          <div className="flex gap-3 mb-4">
             <button
+              type="button"
               onClick={handleQuickRegisterSession}
-              className="flex items-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 font-bold text-sm text-white rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-650/15 active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 font-extrabold text-xs text-white rounded-2xl transition-all cursor-pointer shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 text-center duration-150"
             >
-              <Plus size={16} />
-              <span>تسجيل حصة حضور جديدة</span>
+              <Plus size={16} className="text-white shrink-0" />
+              <span>تسجيل حصة</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setIsOpenPaymentForm(true)}
-              className="flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 font-bold text-sm text-white rounded-xl transition-all cursor-pointer shadow-md shadow-blue-650/15 active:scale-95"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 font-extrabold text-xs text-white rounded-2xl transition-all cursor-pointer shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 text-center duration-150"
             >
-              <DollarSign size={16} />
-              <span>تسجيل دفعة نقدية</span>
+              <DollarSign size={16} className="text-white shrink-0" />
+              <span>تسجيل دفعة</span>
             </button>
           </div>
 
           {/* Tab Selection */}
-          <div className="border-b border-slate-200 flex gap-4">
+          <div className="bg-slate-50 border border-slate-200/80 p-1.5 rounded-2xl flex flex-wrap gap-1.5 items-center select-none shadow-3xs mb-4">
             <button
               onClick={() => setActiveTab('sessions')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
                 activeTab === 'sessions' 
-                  ? 'border-indigo-600 text-indigo-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-indigo-750 shadow-sm border border-slate-100 font-black' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              سجل الحصص والمتابعة ({sessionsCount})
+              <CalendarCheck size={14} className="text-indigo-600 shrink-0" />
+              <span>سجل الحصص</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{sessionsCount}</span>
             </button>
             <button
               onClick={() => setActiveTab('payments')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
                 activeTab === 'payments' 
-                  ? 'border-blue-600 text-blue-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-emerald-750 shadow-sm border border-slate-100 font-black' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              دفعات الدفع والتحصيل ({student.payments.length})
+              <CreditCard size={14} className="text-emerald-600 shrink-0" />
+              <span>سجل الدفعات</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.payments.length}</span>
             </button>
             <button
               onClick={() => setActiveTab('rewards')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
                 activeTab === 'rewards' 
-                  ? 'border-amber-500 text-amber-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-amber-750 shadow-sm border border-slate-100 font-black' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              نظام المكافآت 🏆 ({student.rewardPoints || 0} نقطة)
+              <Award size={14} className="text-amber-500 shrink-0" />
+              <span>المكافأة</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.rewardPoints || 0}</span>
             </button>
             <button
               onClick={() => setActiveTab('studyNotes')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
                 activeTab === 'studyNotes' 
-                  ? 'border-pink-600 text-pink-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-pink-750 shadow-sm border border-slate-100 font-black' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              الملاحظات الدراسية 📝 ({student.studyNotes?.length || 0})
+              <Notebook size={14} className="text-pink-500 shrink-0" />
+              <span>الملاحظة</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.studyNotes?.length || 0}</span>
             </button>
             <button
               onClick={() => setActiveTab('whatsAppTemplates')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
                 activeTab === 'whatsAppTemplates' 
-                  ? 'border-emerald-600 text-emerald-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-emerald-750 shadow-sm border border-slate-100 font-black' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              قوالب واتساب 🟢 ({student.whatsAppTemplates?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
-                activeTab === 'chat' 
-                  ? 'border-violet-600 text-violet-700 font-black' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              محادثة مباشرة 💬
+              <Share2 size={14} className="text-emerald-600 shrink-0" />
+              <span>قوالب واتس</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.whatsAppTemplates?.length || 0}</span>
             </button>
           </div>
 
@@ -1994,172 +2225,7 @@ export default function StudentDetails({
                   </div>
                 )}
 
-                {/* AI Attendance Analysis and Performance Adviser */}
-                {!preferences?.hideAIAnalysis && (
-                  <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-150 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex-1 space-y-1.5 text-right">
-                      <h4 className="text-xs font-black text-blue-950 flex items-center gap-1.5 justify-start">
-                        <Sparkles size={14} className="text-blue-600 animate-pulse" />
-                        <span>مركز التحليل والتشخيص الذكي (Gemini AI)</span>
-                      </h4>
-                      
-                      {isAnalyzing ? (
-                        <div className="flex items-center gap-2 text-slate-500 text-xs py-1">
-                          <Loader2 size={13} className="animate-spin text-blue-600" />
-                          <span>جاري قراءة سجلات الطالب وصياغة النصيحة التربوية...</span>
-                        </div>
-                      ) : aiError ? (
-                        <p className="text-[11px] text-red-650 font-semibold">{aiError}</p>
-                      ) : aiAdvice ? (
-                        <div className="p-3 bg-white border border-blue-100 rounded-xl text-xs text-slate-700 leading-relaxed font-bold shadow-2xs">
-                          {aiAdvice}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-500 font-semibold">
-                          احصل على نصيحة موجزة وذكية فورياً وصمم خطة لتأمين حضور {student.name} بناءً على سجلات حضوره السابقة والحالية.
-                        </p>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={handleAnalyzeStudent}
-                      disabled={isAnalyzing}
-                      className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-black text-xs rounded-xl shadow-md transition-all duration-150 transform hover:scale-102 active:scale-97 cursor-pointer"
-                    >
-                      {isAnalyzing ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <Sparkles size={13} />
-                      )}
-                      <span>تحليل سجل الحضور بالذكاء الاصطناعي</span>
-                    </button>
-                  </div>
-                )}
 
-                {/* Monthly Attendance Chart */}
-                {student.sessions && student.sessions.length > 0 && (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                      <div className="text-right">
-                        <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5 justify-start">
-                          <TrendingUp size={14} className="text-indigo-600" />
-                          <span>إحصائيات ومخطط حضور الحصص الشهري</span>
-                        </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">توزيع وتعداد حصص الطالب الإجمالية والإضافية المنفذة على مدار الأشهر</p>
-                      </div>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1 font-sans">
-                        إجمالي الحصص: {student.sessions.length}
-                      </span>
-                    </div>
-
-                    <div className="relative pt-6">
-                      {(() => {
-                        const data = getMonthlyAttendanceData();
-                        const maxCount = data.length > 0 ? Math.max(...data.map(d => d.count)) : 4;
-                        const midCount = Math.round(maxCount / 2);
-
-                        return (
-                          <>
-                            {/* Guideline lines */}
-                            <div className="absolute inset-x-0 top-6 bottom-8 flex flex-col justify-between pointer-events-none opacity-40">
-                              <div className="border-t border-dashed border-slate-200 w-full" />
-                              <div className="border-t border-dashed border-slate-200 w-full" />
-                              <div className="border-t border-dashed border-slate-200 w-full" />
-                            </div>
-
-                            {/* Guideline values */}
-                            <div className="absolute right-0 top-6 bottom-8 flex flex-col justify-between text-[9px] font-black text-slate-400 pr-1 pointer-events-none select-none">
-                              <span>{maxCount} حصص</span>
-                              <span>{midCount} حصص</span>
-                              <span>0</span>
-                            </div>
-
-                            {/* Columns Area */}
-                            <div className="h-44 flex items-end justify-around gap-2 px-10 relative z-10">
-                              {data.map((m) => {
-                                const percentage = maxCount > 0 ? (m.count / maxCount) * 100 : 0;
-                                const regularPercent = m.count > 0 ? (m.regularCount / m.count) * 100 : 0;
-                                const extraPercent = m.count > 0 ? (m.extraCount / m.count) * 100 : 0;
-
-                                return (
-                                  <div key={m.key} className="flex flex-col items-center flex-1 h-full max-w-[55px] group relative">
-                                    {/* Elevated tooltip */}
-                                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-slate-900 border border-slate-855 text-white text-[10px] rounded-xl py-2 px-3 shadow-xl z-50 text-right w-44 pointer-events-none transition duration-150">
-                                      <p className="font-extrabold pb-1 border-b border-slate-800 mb-1.5 text-center text-indigo-400">
-                                        {m.label}
-                                      </p>
-                                      <div className="space-y-1 font-bold">
-                                        <div className="flex justify-between">
-                                          <span>عدد الحصص الإجمالي:</span>
-                                          <span className="font-mono">{m.count}</span>
-                                        </div>
-                                        <div className="flex justify-between text-indigo-200">
-                                          <span>الأساسية:</span>
-                                          <span className="font-mono">{m.regularCount}</span>
-                                        </div>
-                                        {m.extraCount > 0 && (
-                                          <div className="flex justify-between text-amber-300">
-                                            <span>الإضافية (Extra):</span>
-                                            <span className="font-mono">{m.extraCount}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-x-4 border-x-transparent border-t-4 border-t-slate-900" />
-                                    </div>
-
-                                    {/* Interactive bar column */}
-                                    <div className="w-full flex-1 flex flex-col justify-end">
-                                      <motion.div 
-                                        initial={{ height: 0 }}
-                                        animate={{ height: `${percentage}%` }}
-                                        transition={{ duration: 0.6, ease: "easeOut" }}
-                                        className="w-full relative rounded-t-lg overflow-hidden bg-slate-100 flex flex-col-reverse justify-end shadow-3xs cursor-pointer group-hover:scale-105 transition-all"
-                                      >
-                                        <div 
-                                          className="bg-indigo-600 transition-colors duration-150 group-hover:bg-indigo-700 w-full"
-                                          style={{ height: `${regularPercent}%` }}
-                                        />
-                                        {m.extraCount > 0 && (
-                                          <div 
-                                            className="bg-amber-500 transition-colors duration-150 group-hover:bg-amber-600 w-full"
-                                            style={{ height: `${extraPercent}%` }}
-                                          />
-                                        )}
-
-                                        <div className="absolute inset-x-0 top-1 text-center select-none">
-                                          <span className="text-[9px] font-black text-white bg-slate-900/40 px-1 py-0.5 rounded font-mono">
-                                            {m.count}
-                                          </span>
-                                        </div>
-                                      </motion.div>
-                                    </div>
-
-                                    {/* Month label below */}
-                                    <span className="text-[9px] font-bold text-slate-600 text-center truncate w-full mt-2 font-mono group-hover:text-indigo-600 transition-all">
-                                      {m.label.split(' ')[0]}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Chart legends */}
-                    <div className="flex gap-4 justify-center text-[10px] font-bold text-slate-500 pt-3 border-t border-slate-50 leading-none">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-indigo-600" />
-                        <span>حصص أساسية</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-amber-500" />
-                        <span>حصص إضافية ⚙️</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {student.sessions.length === 0 ? (
                   <div className="text-center py-12 bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -2198,9 +2264,11 @@ export default function StudentDetails({
                               }`}
                             >
                               <td className="py-3 px-4 text-center font-bold text-slate-500">{student.sessions.length - idx}</td>
-                              <td className="py-3 px-4 font-bold text-slate-800">
-                                <span>{session.date}</span>
-                                <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded mr-2 font-semibold">{dayLabel}</span>
+                              <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <span>{session.date}</span>
+                                  <span className="text-[10px] text-slate-550 bg-slate-100 px-2 py-0.5 rounded font-black select-none">{dayLabel}</span>
+                                </div>
                               </td>
                               <td className="py-3 px-4 font-bold text-slate-500 text-left font-mono" dir="ltr">{formatTimeTo12h(session.time)}</td>
                               <td className="py-3 px-4 text-slate-700 font-medium">
@@ -2880,7 +2948,7 @@ ${note.content}
                   </div>
                 )}
               </div>
-            ) : activeTab === 'rewards' ? (
+            ) : (
               <div className="space-y-6 text-right font-sans">
                 {/* Row 1: Dashboard with points & controls */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2897,10 +2965,74 @@ ${note.content}
                       <span className="text-xs bg-white/20 px-3 py-1 rounded-full font-bold">باقة الولاء والتشجيع ⭐</span>
                     </div>
                     <div className="mt-4">
-                      <span className="text-4xl font-black font-mono tracking-tight">{student.rewardPoints || 0}</span>
-                      <span className="text-sm font-bold mr-1.5 text-amber-100 font-sans">نقطة نشطة</span>
+                      {isEditingActivePoints ? (
+                        <div className="space-y-2 mt-1 relative z-10">
+                          <label className="text-[10px] font-bold text-amber-100 block">تعديل رصيد النقاط النشطة:</label>
+                          <div className="flex items-center gap-1.5 justify-start">
+                            <input
+                              type="number"
+                              value={editActivePointsValue}
+                              onChange={(e) => setEditActivePointsValue(e.target.value)}
+                              className="bg-white text-slate-900 border-none px-2 py-1.5 rounded-xl font-mono text-base font-black w-24 text-center focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const rawVal = parseInt(editActivePointsValue);
+                                const newVal = isNaN(rawVal) ? 0 : Math.max(0, rawVal);
+                                
+                                onUpdateStudent(student.id, {
+                                  rewardPoints: newVal,
+                                  rewardTransactions: [
+                                    {
+                                      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+                                      type: newVal >= (student.rewardPoints || 0) ? 'earn' : 'redeem',
+                                      amount: Math.abs(newVal - (student.rewardPoints || 0)),
+                                      reason: 'manual',
+                                      description: `تعديل مباشر لإجمالي النقاط المفعلة للطالب`,
+                                      date: new Date().toISOString().split('T')[0]
+                                    },
+                                    ...(student.rewardTransactions || [])
+                                  ]
+                                });
+                                
+                                setIsEditingActivePoints(false);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-xs font-black cursor-pointer text-white shadow-3xs"
+                            >
+                              حفظ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingActivePoints(false);
+                                setEditActivePointsValue(String(student.rewardPoints || 0));
+                              }}
+                              className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold cursor-pointer text-white"
+                            >
+                              إلغاء
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-4xl font-black font-mono tracking-tight">{student.rewardPoints || 0}</span>
+                          <span className="text-sm font-bold mr-1.5 text-amber-100 font-sans">نقطة نشطة</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditActivePointsValue(String(student.rewardPoints || 0));
+                              setIsEditingActivePoints(true);
+                            }}
+                            className="p-1 px-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[10px] font-black transition-all cursor-pointer backdrop-blur-xs flex items-center gap-1 shrink-0"
+                            title="تعديل مباشر لرصيد النقاط الكلي لتعديله فوراً"
+                          >
+                            <span>تعديل الرصيد ✏️</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-2 text-xs text-amber-50 font-medium">
+                    <div className="mt-2 text-xs text-amber-50 font-medium z-10">
                       يمكن للطالب استبدال هذه النقاط بخصومات على الحصص أو الفواتير المستقلة!
                     </div>
                   </div>
@@ -2947,6 +3079,39 @@ ${note.content}
                           onChange={(e) => setCustomAdjustmentPoints(e.target.value)}
                           className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-center focus:outline-none focus:border-blue-500"
                         />
+                        
+                        {/* Interactive adjustments as requested */}
+                        <div className="flex gap-2 pt-0.5 select-none">
+                          <button
+                            type="button"
+                            onClick={() => setCustomAdjustmentPoints(p => String((parseInt(p) || 0) + 10))}
+                            className="flex-1 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-extrabold text-xs rounded-lg transition-colors flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer"
+                            title="إضافة 10 نقاط"
+                          >
+                            <span className="text-emerald-500 font-black">+</span>
+                            <span>10</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomAdjustmentPoints(p => String((parseInt(p) || 0) - 10))}
+                            className="flex-1 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-extrabold text-xs rounded-lg transition-colors flex items-center justify-center gap-0.5 active:scale-95 cursor-pointer"
+                            title="خصم 10 نقاط"
+                          >
+                            <span className="text-rose-500 font-black">-</span>
+                            <span>10</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomAdjustmentPoints('');
+                              setCustomAdjustmentNotes('');
+                            }}
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-[10px] rounded-lg transition-colors flex items-center justify-center active:scale-95 cursor-pointer"
+                          >
+                            إعادة ضبط 🔄
+                          </button>
+                        </div>
+
                         <input
                           type="text"
                           placeholder="السبب (مثلاً: حل الواجب بالكامل)"
@@ -2977,6 +3142,115 @@ ${note.content}
 
                 </div>
 
+                {/* Section: Badges and Progress to targets */}
+                <div className="bg-gradient-to-l from-indigo-50/10 to-indigo-50/5 border border-indigo-150 rounded-3xl p-6 shadow-3xs space-y-5">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-indigo-100/60 pb-3">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+                        <Trophy size={18} className="text-amber-500 shrink-0" />
+                        <span>الأوسمة التقديرية وشارات تفوّق الطالب 🏅</span>
+                      </h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500 font-medium leading-relaxed mt-0.5">
+                        شارات تذكارية تُمنح آلياً وتغذي رصيد نقاط الطالب بمجرد حضور الحصص وتخطي العقبات المستهدفة!
+                      </p>
+                    </div>
+                    {/* Progress Indicator */}
+                    <div className="bg-white/95 px-3.5 py-1.5 border border-indigo-100 shrink-0 text-center shadow-3xs rounded-xl">
+                      <span className="text-[9px] text-slate-400 font-black block leading-none">الأوسمة المحرزة</span>
+                      <span className="text-xs sm:text-sm font-black text-indigo-700">{student.earnedBadges?.length || 0} من 6</span>
+                    </div>
+                  </div>
+
+                  {/* Badge list mapping */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
+                    {(() => {
+                      const rules = [
+                        { id: 'badge-3-sess', name: 'البادئ الطموح 🌟', description: 'إتمام 3 حصص دراسية بنجاح', type: 'lessons', count: 3, points: 30, icon: '🌟' },
+                        { id: 'badge-5-sess', name: 'المثابر المجتهد 🎯', description: 'إتمام 5 حصص دراسية بنجاح', type: 'lessons', count: 5, points: 50, icon: '🎯' },
+                        { id: 'badge-10-sess', name: 'بطل المعرفة 👑', description: 'إتمام 10 حصص دراسية بنجاح', type: 'lessons', count: 10, points: 100, icon: '👑' },
+                        { id: 'badge-15-sess', name: 'أيقونة التفوق 💎', description: 'إتمام 15 حصة دراسية بنجاح وتأصيل المنهج', type: 'lessons', count: 15, points: 150, icon: '💎' },
+                        { id: 'badge-25-sess', name: 'العلامة الفذّ 🏆', description: 'إتمام 25 حصة دراسية بنجاح وتأسيس حضور خرافي', type: 'lessons', count: 25, points: 250, icon: '🏆' },
+                        { id: 'badge-course-complete', name: 'قاهر المناهج 📚', description: 'إيجاز وإتمام الدورة الدراسية بالكامل بنجاح', type: 'course_complete', count: 1, points: 200, icon: '📚' }
+                      ];
+
+                      const completedSessionsCount = student.sessions.length;
+
+                      return rules.map(rule => {
+                        const earnedBadge = (student.earnedBadges || []).find(b => b.id === rule.id);
+                        const isEarned = !!earnedBadge;
+                        
+                        let progressPercent = 0;
+                        let progressText = '';
+
+                        if (rule.type === 'lessons') {
+                          progressPercent = Math.min(100, Math.round((completedSessionsCount / rule.count) * 100));
+                          progressText = `${completedSessionsCount}/${rule.count} حصة`;
+                        } else if (rule.type === 'course_complete') {
+                          if (student.type === 'course' && student.totalLessonsCount) {
+                            progressPercent = Math.min(100, Math.round((completedSessionsCount / student.totalLessonsCount) * 100));
+                            progressText = `${completedSessionsCount}/${student.totalLessonsCount} حصة`;
+                          } else {
+                            progressPercent = 0;
+                            progressText = 'لطلاب الباقات';
+                          }
+                        }
+
+                        return (
+                          <div 
+                            key={rule.id}
+                            className={`p-4 rounded-2xl border text-center transition-all flex flex-col justify-between min-h-[160px] relative select-none ${
+                              isEarned
+                                ? 'bg-white border-amber-350 shadow-sm shadow-amber-500/5 ring-1 ring-amber-400/20'
+                                : 'bg-slate-50/70 border-slate-150 opacity-70'
+                            }`}
+                          >
+                            <div className="space-y-1.5 text-center">
+                              {/* Icon Bubble */}
+                              <div className={`w-9 h-9 rounded-full mx-auto flex items-center justify-center text-sm ${
+                                isEarned ? 'bg-amber-100 text-amber-600 ring-4 ring-amber-50' : 'bg-slate-200 text-slate-450'
+                              }`}>
+                                {rule.icon}
+                              </div>
+                              <h4 className="text-[11px] font-black text-slate-800 leading-snug">{rule.name}</h4>
+                              <p className="text-[9px] text-slate-450 font-medium leading-relaxed leading-snug">{rule.description}</p>
+                            </div>
+
+                            <div className="pt-2.5 border-t border-slate-100 mt-2 space-y-1">
+                              {isEarned ? (
+                                <div className="text-center">
+                                  <span className="text-[9px] text-emerald-600 font-extrabold flex items-center justify-center gap-0.5 leading-none">
+                                    <span>✔</span> تم الحصول
+                                  </span>
+                                  <span className="text-[8px] text-slate-400 font-sans font-medium block text-center leading-relaxed mt-0.5">
+                                    بتاريخ: {earnedBadge.earnedDate}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {/* Progress Bar Mini */}
+                                  <div className="w-full bg-slate-200 h-1 rounded-full overflow-hidden flex flex-row-reverse">
+                                    <div 
+                                      className="bg-indigo-500 h-full rounded-full" 
+                                      style={{ width: `${progressPercent}%` }}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between items-center text-[8px] text-slate-500 font-bold leading-none">
+                                    <span>{progressPercent}%</span>
+                                    <span>{progressText}</span>
+                                  </div>
+                                </div>
+                              )}
+                              <span className="text-[8px] font-sans font-extrabold text-indigo-700 block text-center mt-1">
+                                الجائزة: +{rule.points} نقطة
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
                 {/* Section 2: Redemption Center */}
                 <div>
                   <h3 className="text-base font-black text-slate-800 flex items-center gap-2 mb-4">
@@ -2986,84 +3260,147 @@ ${note.content}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                     
-                    {/* Package A */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between h-full hover:border-amber-300 transition-all">
-                      <div>
-                        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 mb-3 ml-auto">
-                          <Gift size={20} />
-                        </div>
-                        <h5 className="font-bold text-slate-800 text-sm font-sans">كوبون خصم بقيمة 20 {currency}</h5>
-                        <p className="text-xs text-slate-400 mt-1">يخصم القيمة تالياً من المديونية التراكمية الإجمالية للطالب.</p>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-xs text-slate-500 font-bold">التكلفة والخصم:</span>
-                          <span className="text-xs font-mono font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">50 نقطة ⭐</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRedeemReward('discount', { points: 50, amount: 20 })}
-                          disabled={(student.rewardPoints || 0) < 50}
-                          className="w-full py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    {catalog.map((item) => {
+                      const isEditing = editingCatalogItemId === item.id;
+                      
+                      return (
+                        <div 
+                          key={item.id} 
+                          className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between h-full hover:border-amber-300 transition-all gap-3 relative"
                         >
-                          استبدال الآن 🛒
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Package B */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between h-full hover:border-amber-300 transition-all">
-                      <div>
-                        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 mb-3 ml-auto">
-                          <Gift size={20} />
+                          {isEditing ? (
+                            // Edit Form for this catalog item inline
+                            <div className="space-y-2 text-right">
+                              <h5 className="font-extrabold text-xs text-indigo-600 mb-2">تعديل المكافأة بالكتالوج ✏️</h5>
+                              <div>
+                                <label className="text-[9px] font-bold text-slate-550 block mb-0.5">اسم المكافأة / الجائزة:</label>
+                                <input
+                                  type="text"
+                                  value={editCatalogTitle}
+                                  onChange={(e) => setEditCatalogTitle(e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold"
+                                  placeholder="مثل: كوبون خصم بقيمة 20"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] font-bold text-slate-550 block mb-0.5">الوصف:</label>
+                                <textarea
+                                  value={editCatalogDescription}
+                                  onChange={(e) => setEditCatalogDescription(e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-medium h-10 resize-none leading-snug"
+                                  placeholder="وصف المكافأة..."
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-550 block mb-0.5">النقاط المطلوبة:</label>
+                                  <input
+                                    type="number"
+                                    value={editCatalogPoints}
+                                    onChange={(e) => setEditCatalogPoints(e.target.value)}
+                                    className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono font-black text-center"
+                                  />
+                                </div>
+                                {item.type === 'discount' && (
+                                  <div>
+                                    <label className="text-[9px] font-bold text-slate-550 block mb-0.5">الخصم ({currency}):</label>
+                                    <input
+                                      type="number"
+                                      value={editCatalogAmount}
+                                      onChange={(e) => setEditCatalogAmount(e.target.value)}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-sans font-black text-center text-emerald-600"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-1.5 pt-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const pts = parseInt(editCatalogPoints);
+                                    if (isNaN(pts) || pts <= 0) {
+                                      alert("من فضلك أدخل عدد نقاط نشط وصحيح");
+                                      return;
+                                    }
+                                    const amt = item.type === 'discount' ? parseFloat(editCatalogAmount) : item.amount;
+                                    
+                                    const updatedCatalog = catalog.map(c => {
+                                      if (c.id === item.id) {
+                                        return {
+                                          ...c,
+                                          title: editCatalogTitle.trim() || c.title,
+                                          description: editCatalogDescription.trim() || c.description,
+                                          points: pts,
+                                          amount: isNaN(amt) ? c.amount : amt
+                                        };
+                                      }
+                                      return c;
+                                    });
+                                    
+                                    setCatalog(updatedCatalog);
+                                    localStorage.setItem('teacherRewardCatalog', JSON.stringify(updatedCatalog));
+                                    setEditingCatalogItemId(null);
+                                  }}
+                                  className="flex-1 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] rounded-lg cursor-pointer"
+                                >
+                                  حفظ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCatalogItemId(null)}
+                                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-705 font-bold text-[10px] rounded-lg cursor-pointer"
+                                >
+                                  إلغاء
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            // Normal Card UI representing this catalog item
+                            <>
+                              <div>
+                                <div className="flex justify-between items-start mb-2 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditCatalogTitle(item.title);
+                                      setEditCatalogDescription(item.description);
+                                      setEditCatalogPoints(String(item.points));
+                                      setEditCatalogAmount(String(item.amount));
+                                      setEditingCatalogItemId(item.id);
+                                    }}
+                                    className="p-1 px-1.5 bg-slate-100 hover:bg-amber-100 hover:text-amber-800 text-slate-500 rounded-lg text-[9px] font-black transition-colors cursor-pointer select-none flex items-center gap-0.5"
+                                    title="تعديل تفاصيل ونقاط هذه المكافأة بالكتالوج"
+                                  >
+                                    <span>تعديل المكافأة ⚙️</span>
+                                  </button>
+                                  <div className={`w-8 h-8 rounded-full ${item.type === 'free_class' ? 'bg-orange-50 text-orange-600' : 'bg-amber-50 text-amber-600'} flex items-center justify-center shrink-0`}>
+                                    <Gift size={16} />
+                                  </div>
+                                </div>
+                                <h5 className="font-bold text-slate-800 text-xs font-sans leading-snug">{item.title}</h5>
+                                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{item.description}</p>
+                              </div>
+                              <div className="mt-auto pt-2 border-t border-slate-100">
+                                <div className="flex justify-between items-center mb-2 text-[10px]">
+                                  <span className="text-slate-500 font-bold">التكلفة والخصم:</span>
+                                  <span className={`font-mono font-black px-2 py-0.5 rounded-md ${item.type === 'free_class' ? 'bg-orange-50 text-orange-600' : 'bg-amber-50 text-amber-600'}`}>
+                                    {item.points} نقطة ⭐
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRedeemCatalogItem(item)}
+                                  disabled={(student.rewardPoints || 0) < item.points}
+                                  className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-450 text-white font-black text-xs rounded-xl transition-all cursor-pointer"
+                                >
+                                  استبدال الآن 🛒
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <h5 className="font-bold text-slate-800 text-sm font-sans">كوبون خصم بقيمة 50 {currency}</h5>
-                        <p className="text-xs text-slate-400 mt-1">خصم فوري لحساب الطالب يتم احتسابه وتسجيله في كشف الحساب.</p>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-xs text-slate-500 font-bold">التكلفة والخصم:</span>
-                          <span className="text-xs font-mono font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">100 نقطة ⭐</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRedeemReward('discount', { points: 100, amount: 50 })}
-                          disabled={(student.rewardPoints || 0) < 100}
-                          className="w-full py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
-                        >
-                          استبدال الآن 🛒
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Package C */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between h-full hover:border-amber-300 transition-all">
-                      <div>
-                        <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-600 mb-3 ml-auto">
-                          <Award size={20} />
-                        </div>
-                        <h5 className="font-bold text-slate-800 text-sm font-sans">حصة دراسية مجانية 🎁</h5>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {student.type === 'lesson' 
-                            ? `إعفاء لحصة فردية بقيمة ${student.lessonRate || 100} ${currency}.` 
-                            : 'خصم معادل لرسوم حصة إضافية بموجب نقاط الجوائز والولاء.'}
-                        </p>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-xs text-slate-500 font-bold">التكلفة والخصم:</span>
-                          <span className="text-xs font-mono font-black text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg">120 نقطة ⭐</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRedeemReward('free_class')}
-                          disabled={(student.rewardPoints || 0) < 120}
-                          className="w-full py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
-                        >
-                          استبدال الآن 🛒
-                        </button>
-                      </div>
-                    </div>
+                      );
+                    })}
 
                     {/* Custom Reward Card */}
                     <div className="bg-gradient-to-br from-indigo-50/50 to-purple-50/50 border border-indigo-100 rounded-2xl p-5 shadow-sm flex flex-col justify-between h-full">
@@ -3125,10 +3462,21 @@ ${note.content}
 
                 {/* Section 3: Transactions Log */}
                 <div>
-                  <h3 className="text-base font-black text-slate-800 flex items-center gap-2 mb-3">
-                    <History size={18} className="text-slate-500" />
-                    كشف وسجل عمليات النقاط والجوائز لـ {student.name}
-                  </h3>
+                  <div className="flex items-center justify-between flex-wrap gap-2.5 mb-3.5">
+                    <h3 className="text-base font-black text-slate-800 flex items-center gap-2">
+                      <History size={18} className="text-slate-500" />
+                      <span>كشف وسجل عمليات النقاط والجوائز لـ {student.name}</span>
+                    </h3>
+                    {student.rewardTransactions && student.rewardTransactions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearRewardTransactions}
+                        className="flex items-center gap-1 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 text-[10.5px] font-black px-3 py-1.5 rounded-xl transition cursor-pointer duration-200 shadow-3xs active:scale-95"
+                      >
+                        <span>تصفير كشف المكافآت والعمليات 🧹</span>
+                      </button>
+                    )}
+                  </div>
 
                   {(!student.rewardTransactions || student.rewardTransactions.length === 0) ? (
                     <div className="text-center py-10 bg-white border border-slate-200 rounded-3xl shadow-sm">
@@ -3137,31 +3485,42 @@ ${note.content}
                       <p className="text-[10px] text-slate-400 mt-1 font-medium">ستظهر الحركات بمجرد كسب أو استبدال الجوائز ومكافآت الحصص.</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto bg-white border border-slate-205 rounded-2xl shadow-sm scrollbar-thin">
-                      <table className="w-full text-right text-xs min-w-[450px]">
-                        <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100">
+                    <div className="overflow-x-auto bg-white border border-slate-250 rounded-2xl shadow-sm scrollbar-thin">
+                      <table className="w-full text-right text-xs min-w-[550px]">
+                        <thead className="bg-slate-50 text-slate-650 font-black border-b border-slate-100">
                           <tr>
-                            <th className="py-2.5 px-4 font-bold text-slate-550">التاريخ</th>
-                            <th className="py-2.5 px-4 text-center font-bold text-slate-550">النوع</th>
-                            <th className="py-2.5 px-4 text-center font-bold text-slate-550">النقاط</th>
-                            <th className="py-2.5 px-3 font-bold text-slate-550">البيان وسبب المعاملة</th>
+                            <th className="py-3 px-4 font-black whitespace-nowrap text-slate-550">التاريخ</th>
+                            <th className="py-3 px-4 text-center font-black whitespace-nowrap text-slate-550">النوع</th>
+                            <th className="py-3 px-4 text-center font-black whitespace-nowrap text-slate-550">النقاط</th>
+                            <th className="py-3 px-3 font-black whitespace-nowrap text-slate-550">البيان وسبب المعاملة</th>
+                            <th className="py-3 px-4 text-center font-black whitespace-nowrap text-slate-550">حذف</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700 font-bold">
+                        <tbody className="divide-y divide-slate-100 text-slate-700 font-bold whitespace-nowrap">
                           {student.rewardTransactions.map((tx) => (
                             <tr key={tx.id} className="hover:bg-slate-50/55 transition-colors">
-                              <td className="py-2.5 px-4 text-slate-500 font-mono" dir="ltr">{tx.date}</td>
-                              <td className="py-2.5 px-4 text-center">
+                              <td className="py-3 px-4 text-slate-500 font-mono whitespace-nowrap" dir="ltr">{tx.date}</td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
                                 {tx.type === 'earn' ? (
-                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md font-bold text-[10px]">كسب 🟢</span>
+                                  <span className="inline-block px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md font-bold text-[10px]">كسب 🟢</span>
                                 ) : (
-                                  <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-md font-bold text-[10px]">استبدال 🔴</span>
+                                  <span className="inline-block px-2.5 py-0.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-md font-bold text-[10px]">استبدال 🔴</span>
                                 )}
                               </td>
-                              <td className={`py-2.5 px-4 text-center font-bold text-sm ${tx.type === 'earn' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                              <td className={`py-3 px-4 text-center font-black text-sm whitespace-nowrap ${tx.type === 'earn' ? 'text-emerald-600' : 'text-orange-600'}`}>
                                 {tx.type === 'earn' ? `+${tx.amount}` : `-${tx.amount}`}
                               </td>
-                              <td className="py-2.5 px-3 text-slate-700 font-semibold">{tx.description}</td>
+                              <td className="py-3 px-3 text-slate-850 font-black whitespace-nowrap">{tx.description}</td>
+                              <td className="py-3 px-4 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRewardTransaction(tx.id)}
+                                  className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-red-50 transition-colors cursor-pointer"
+                                  title="حذف هذا السجل"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -3171,20 +3530,25 @@ ${note.content}
                 </div>
 
               </div>
-            ) : (
-              <div className="space-y-4">
-                <LiveChat 
-                  role="teacher"
-                  studentId={student.id}
-                  studentName={student.name}
-                  teacherName={preferences?.teacherName || 'المعلم'}
-                />
-              </div>
             )}
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
+      </div>
+
+      {/* Live Chat Section permanently at the bottom */}
+      <div className="bg-white border border-slate-200/80 rounded-3xl p-5.5 shadow-xs">
+        <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 mb-4.5 text-right justify-start">
+          <MessageCircle size={16} className="text-violet-600 shrink-0" />
+          <span>المحادثة والرسائل المباشرة مع {student.name} 💬</span>
+        </h3>
+        <LiveChat 
+          role="teacher"
+          studentId={student.id}
+          studentName={student.name}
+          teacherName={preferences?.teacherName || 'المعلم'}
+        />
       </div>
 
       {/* Register Session Dialog Modal */}
@@ -3806,7 +4170,7 @@ ${note.content}
                       {/* Dynamic Title */}
                       <div className="space-y-1">
                         <span className="text-[10px] font-black text-indigo-750 uppercase tracking-widest block">رمز التحقق الذكي</span>
-                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        <p className="text-[11px] text-slate-505 font-medium leading-relaxed">
                           الرجاء إبراز هذا الرمز عند الطلب للدخول السريع للصف وحساب النقاط والمراجعة
                         </p>
                       </div>

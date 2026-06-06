@@ -129,20 +129,62 @@ async function startServer() {
     return res.json({ success: true });
   });
 
+  // Helper function for automatic high-quality rule-based fallback advice when Gemini is unavailable or rate-limited
+  function generateSmartFallbackAdvice(studentName: string, sessions: any[]): string {
+    if (!sessions || sessions.length === 0) {
+      return `مستشار ذكي: لا توجد سجلات حصص مسجلة حتى الآن للطالب ${studentName}. يُنصح بجدولة حصته الأولى لإطلاق خطة تقييم ومتابعة المهارات وتحفيزه مبكراً.`;
+    }
+
+    let excellentCount = 0;
+    let goodCount = 0;
+    let weakCount = 0;
+    let hasAbsence = false;
+
+    sessions.forEach((s: any) => {
+      if (s.evaluation) {
+        if (s.evaluation === "ممتاز" || s.evaluation === "جيد جداً") {
+          excellentCount++;
+        } else if (s.evaluation === "جيد" || s.evaluation === "مقبول") {
+          goodCount++;
+        } else if (s.evaluation === "ضعيف") {
+          weakCount++;
+        }
+      }
+      if (s.notes && (s.notes.includes("غياب") || s.notes.includes("غائب") || s.notes.includes("تغيب"))) {
+        hasAbsence = true;
+      }
+    });
+
+    if (hasAbsence) {
+      return `مستشار ذكي: لوحظ عدم انتظام مؤقت في المواعيد الأخيرة. يُقترح التنسيق السريع مع ولي الأمر وتفعيل تنبيهات تذكيرية بالحصص لضمان الاستمرارية وتجنب فجوات التعلم.`;
+    }
+
+    if (excellentCount > goodCount && excellentCount > weakCount) {
+      return `مستشار ذكي: يُبدي تفاعلاً وأداءً أكاديمياً استثنائياً ومبهراً في السجلات الأخيرة. يُنصح بمواصلة تشجيعه عبر لوحة التقدم وتقدير تميزه لضمان تحفيزه المستمر.`;
+    }
+
+    if (weakCount > 0) {
+      return `مستشار ذكي: يُرصد احتياج الطالب لتعزيز بعض المفاهيم التأسيسية. يوصى بتخصيص 10 دقائق مراجعة سريعة قبل الحصة القادمة وبناء روابط دعم فردية لتبسيط الصعوبات.`;
+    }
+
+    return `مستشار ذكي: أداء الطالب مستقر تماماً وتفاعله متوازن علمياً وسلوكياً خلال الحصص. يُوصى بالتركيز على التقييمات الإيجابية ودفعه للمشاركة الشفهية لزيادة ثقته بنفسه.`;
+  }
+
   // API Route to analyze student attendance logs using Gemini API safely on server-side
   app.post("/api/analyze-student", async (req, res) => {
+    const { studentName, sessions } = req.body;
+
+    if (!studentName) {
+      return res.status(400).json({ error: "اسم الطالب مطلوب" });
+    }
+
+    const fallbackAdvice = generateSmartFallbackAdvice(studentName, sessions || []);
+
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        return res.status(400).json({ 
-          error: "Gemini API Key is not configured. Please add your key in the Secrets panel." 
-        });
-      }
-
-      const { studentName, sessions } = req.body;
-
-      if (!studentName) {
-        return res.status(400).json({ error: "اسم الطالب مطلوب" });
+        // Return beautiful rule-based fallback advice if API key is not configured yet
+        return res.json({ advice: fallbackAdvice, isFallback: true });
       }
 
       // Initialize the official Gemini SDK
@@ -179,13 +221,12 @@ ${sessionsText || "لا توجد سجلات حصص حالياً للطالب."}
         contents: prompt,
       });
 
-      const advice = response.text || "تحليل ممتاز للطالب! يرجى الاستمرار في الحفاظ على وتيرة المتابعة والتشجيع المستمر للواجبات والدروس.";
-      return res.json({ advice: advice.trim() });
+      const advice = response.text || fallbackAdvice;
+      return res.json({ advice: advice.trim(), isFallback: false });
     } catch (err: any) {
-      console.error("Error with Gemini analysis API:", err);
-      return res.status(500).json({ 
-        error: "فشل استدعاء الذكاء الاصطناعي لتحليل البيانات. يرجى التأكد من صلاحية المفتاح والاتصال." 
-      });
+      console.warn("Exception in Gemini API (e.g. high-demand 503 or limit), using rule-based fallback advice:", err.message || err);
+      // Return beautiful fallback advice without throwing internal server error
+      return res.json({ advice: fallbackAdvice, isFallback: true });
     }
   });
 

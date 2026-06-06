@@ -118,6 +118,20 @@ export default function LockScreen({ onLogin, students = [], onStudentLogin }: L
     }
   };
 
+  const handleOfflineLocalBypass = () => {
+    localStorage.setItem('teacher_offline_mode', 'true');
+    setSuccess('تم تفعيل وضع الحفظ المحلي (أوفلاين) بنجاح! جاري تحويلك... 📲');
+    setTimeout(() => {
+      onLogin({
+        username: 'local_offline_teacher',
+        fullName: 'أستاذ محلي (أوفلاين)',
+        subject: 'جميع المواد الدراسية',
+        primaryColor: 'blue',
+        userId: 'offline_local'
+      });
+    }, 1200);
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -852,6 +866,20 @@ export default function LockScreen({ onLogin, students = [], onStudentLogin }: L
               </motion.form>
             )}
           </AnimatePresence>
+
+          {/* Offline/Bypass login option directly underneath tab components */}
+          {activeTab !== 'student' && (
+            <div className="pt-4 border-t border-slate-100 flex flex-col items-center justify-center space-y-2">
+              <span className="text-[10px] text-slate-400 font-bold">تواجه مشكلة في الاتصال بالشبكة أو إنشاء حساب جديد؟</span>
+              <button
+                type="button"
+                onClick={handleOfflineLocalBypass}
+                className="w-full py-2.5 px-4 bg-amber-50 hover:bg-amber-100 active:scale-98 text-amber-700 border border-amber-200/50 rounded-2xl font-bold text-xs transition duration-150 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>💻 الدخول كمعلم في وضع "أوفلاين" (حفظ محلي فوراً)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* PWA App Installation Minimal Promo Card */}

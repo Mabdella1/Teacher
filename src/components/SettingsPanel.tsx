@@ -3,7 +3,7 @@ import { TeacherPreferences, Student, Appointment } from '../types';
 import { 
   Settings, KeyRound, CloudLightning, Database, Download, Upload, Trash2, 
   RefreshCw, Key, ShieldCheck, AlertTriangle, Palette, Check, Sliders, Bell,
-  Chrome
+  Chrome, Copy, FileText, Send, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { COLOR_PRESETS } from '../lib/theme';
@@ -34,6 +34,19 @@ export default function SettingsPanel({
   const [hideGoogleCalendar, setHideGoogleCalendar] = useState(preferences.hideGoogleCalendar === true);
   const [newPasscode, setNewPasscode] = useState('');
   const [isUpdatingPasscode, setIsUpdatingPasscode] = useState(false);
+
+  // WhatsApp Message templates customizable states
+  const [selectedPreviewStudentId, setSelectedPreviewStudentId] = useState<string>('');
+  const [copiedTemplateId, setCopiedTemplateId] = useState<string | null>(null);
+  const [whatsAppWarning, setWhatsAppWarning] = useState<string | null>(null);
+  const [activeTemplateTab, setActiveTemplateTab] = useState<'reminder' | 'dues' | 'report' | 'renew'>('reminder');
+
+  const [customTemplates, setCustomTemplates] = useState({
+    reminder: `السلام عليكم ورحمة الله وبركاته، أهلاً بك يا [اسم_الطالب] 🌸\n\nتذكير لطيف بموعد حصتنا القادمة لمادة [المادة] إن شاء الله اليوم في تمام الساعة [الموعد] ⏰\n\nيرجى التواجد بانتظام وتجهيز دفتر الملاحظات والواجبات المنزلية. بالتوفيق والنجاح الدائم! 📚✨\n\nتحياتي، أستاذ [اسم_المعلم]`,
+    dues: `السلام عليكم ورحمة الله وبركاته، أهلاً بك يا [اسم_الطالب] 🌸\n\nتذكير لطيف بشأن رسوم مادة [المادة] الدراسية مع أستاذ [اسم_المعلم].\n\nالمتبقي المالي المطلوب تسديده لإنهاء تسوية الحساب هو: [المبلغ_المتبقي] [العملة] 💰\n\nنشكر جزيل الشكر تعاونكم لضمان استمرارية الحصص بسلاسة وبشكل منتظم. دمتم بخير وسعادة! 🌱`,
+    report: `السلام عليكم ورحمة الله وبركاته، أهلاً بك يا [اسم_الطالب] 🌟\n\nيسعدني أستاذ [اسم_المعلم] أن أقدم لكم تقريراً موجزاً للتحصيل الدراسي ومجهوداتكم معنا بمادة [المادة]:\n\nالتقييم العام للمجهود: [التقييم_العام] 🏆\nعدد الحصص المنجزة: [عدد_الحصص] حصص حضور بانتظام ومثابرة رائعة.\n\nنصيحتي لكم: الاستمرار بنفس الطاقة واستكمال جميع التكليفات للوصول للدرجة النهائية والتميز الدائم! ❤️✏️`,
+    renew: `السلام عليكم ورحمة الله وبركاته، أهلاً بك يا [اسم_الطالب] 🎓\n\nنود تذكيركم باقتراب صلاحية باقة الكورس الحالية لمادة [المادة] من خط النهاية.\n\nعدد الحصص المنجزة للحضور الفعلي: [عدد_الحصص_المنجزة] حصة، من إجمالي الباقة [إجمالي_الحصص] حصة ⏰\n\nيرجى التنسيق لتجديد الاشتراك لضمان استمرارية الحضور المنهجي واكتمال الجدول. كل الشكر لكم! 🌸🚀`
+  });
   
   // Custom states
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
@@ -68,6 +81,9 @@ export default function SettingsPanel({
       dndEnabled: false,
       dndStart: '22:00',
       dndEnd: '08:00',
+      sendStudentClassReminders: true,
+      sendStudentPaymentReminders: true,
+      sendStudentCompletionReminders: true,
     };
     const stored = localStorage.getItem('teacherNotificationSettings');
     if (stored) {
@@ -133,6 +149,73 @@ export default function SettingsPanel({
   const triggerSuccess = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const getEvaluatedTemplate = (templateText: string, studentId: string) => {
+    const student = students.find(s => s.id === studentId);
+    const sName = student ? student.name : 'أحمد محمد';
+    const sSubject = subject || 'المادة الدراسية';
+    const sTeacher = teacherName || 'المعلم الفاضل';
+    const sCurrency = currency || 'ج.م';
+    
+    let sDues = '150';
+    if (student) {
+      const totalPaid = student.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+      if (student.type === 'course') {
+        const coursePriceVal = student.coursePrice || 0;
+        sDues = String(Math.max(0, coursePriceVal - totalPaid));
+      } else {
+        const lessonRateVal = student.lessonRate || 0;
+        const totalCost = (student.sessions?.length || 0) * lessonRateVal;
+        sDues = String(Math.max(0, totalCost - totalPaid));
+      }
+    }
+    
+    let sTime = '04:00 م';
+    if (student && appointments && appointments.length > 0) {
+      const matchedApp = appointments.find(a => a.studentId === student.id);
+      if (matchedApp) {
+        sTime = matchedApp.time;
+      }
+    }
+
+    const sSessionsCount = student ? String(student.sessions?.length || 0) : '8';
+    const sTotalLessons = student ? String(student.totalLessonsCount || 12) : '12';
+    const sEvaluation = student ? (student.overallEvaluation || 'ممتاز') : 'ممتاز ✨';
+    
+    return templateText
+      .replace(/\[اسم_الطالب\]/g, sName)
+      .replace(/\[اسم_المعلم\]/g, sTeacher)
+      .replace(/\[المادة\]/g, sSubject)
+      .replace(/\[الموعد\]/g, sTime)
+      .replace(/\[المبلغ_المتبقي\]/g, sDues)
+      .replace(/\[العملة\]/g, sCurrency)
+      .replace(/\[التقييم_العام\]/g, sEvaluation)
+      .replace(/\[عدد_الحصص\]/g, sSessionsCount)
+      .replace(/\[عدد_الحصص_المنجزة\]/g, sSessionsCount)
+      .replace(/\[إجمالي_الحصص\]/g, sTotalLessons);
+  };
+
+  const handleOpenWhatsApp = (studentId: string, evaluatedText: string) => {
+    const student = students.find(s => s.id === studentId);
+    if (!studentId || !student) {
+      setWhatsAppWarning('⚠️ يرجى تحديد أحد طلابك من القائمة لتمرير ومزامنة بياناته الفعلية مع قالب الرسالة للتأكيد والمشاركة.');
+      setTimeout(() => setWhatsAppWarning(null), 5000);
+      return;
+    }
+    if (!student.phone || student.phone.trim() === '') {
+      setWhatsAppWarning(`⚠️ عذراً! الطالب "${student.name}" ليس لديه رقم هاتف مسجل حالياً في السجلات. يرجى تعديله أو استكمال تفاصيله أولاً.`);
+      setTimeout(() => setWhatsAppWarning(null), 5000);
+      return;
+    }
+    
+    let cleanPhone = student.phone.trim();
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '20' + cleanPhone.slice(1);
+    }
+    const encodedText = encodeURIComponent(evaluatedText);
+    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+    window.open(url, '_blank');
   };
 
   // Export JSON Backup file
@@ -1139,6 +1222,238 @@ export default function SettingsPanel({
                   </button>
                   <span className="text-[11px] font-bold text-slate-700">تنبيه عند اقتراب تاريخ استحقاق قسط الطالب ⏳</span>
                 </div>
+              </div>
+
+              {/* Section: Student Personal Alerts (Student Portal) */}
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl space-y-3 mt-4" style={{ backgroundColor: '#FAF5FF', borderColor: '#E9D5FF' }}>
+                <span className="font-extrabold text-purple-900 text-xs block border-b border-purple-100 pb-2">
+                  🎓 تخصيص تنبيهات الطلاب التلقائية (Student Portal Alerts)
+                </span>
+                
+                {/* 1. Student Class Reminders */}
+                <div className="flex justify-between items-center text-xs">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ sendStudentClassReminders: notifSettings.sendStudentClassReminders !== false ? false : true })}
+                    className="text-purple-655 cursor-pointer"
+                  >
+                    {notifSettings.sendStudentClassReminders !== false ? (
+                      <span className="text-purple-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-705">تذكير وتنبيه الطالب بحصصه ومواعيده المجدولة اليومية 📆</span>
+                </div>
+
+                {/* 2. Student Payment Due Reminders */}
+                <div className="flex justify-between items-center text-xs border-t border-purple-100 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ sendStudentPaymentReminders: notifSettings.sendStudentPaymentReminders !== false ? false : true })}
+                    className="text-purple-655 cursor-pointer"
+                  >
+                    {notifSettings.sendStudentPaymentReminders !== false ? (
+                      <span className="text-purple-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-705">تنبيه الطالب بالمدفوعات والمستحقات المتبقية في ذمته 💰</span>
+                </div>
+
+                {/* 3. Student Completion Reminders */}
+                <div className="flex justify-between items-center text-xs border-t border-purple-100 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => saveNotifSetting({ sendStudentCompletionReminders: notifSettings.sendStudentCompletionReminders !== false ? false : true })}
+                    className="text-purple-655 cursor-pointer"
+                  >
+                    {notifSettings.sendStudentCompletionReminders !== false ? (
+                      <span className="text-purple-600 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="36" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className="text-slate-350 block transition-colors duration-200">
+                        <svg className="w-10 h-5" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="48" height="24" rx="12" fill="currentColor"/>
+                          <circle cx="12" cy="12" r="9" fill="white"/>
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-[11px] font-bold text-slate-705">تنبيه الطالب باقتراب اكتمال حصص اشتراكه الفعلي بالكورس 🏆</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* WhatsApp Message Templates Management Card */}
+        <div className="premium-card p-6 space-y-5 lg:col-span-2 text-right">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3.5">
+            <h3 className="text-base font-extrabold text-slate-800 flex items-center justify-start gap-2">
+              <span className="p-1 px-2.5 bg-emerald-100 rounded-lg text-emerald-700 font-extrabold text-sm">📱</span>
+              قوالب رسائل تذكير ومستحقات واتساب الجاهزة (WhatsApp Template Hub)
+            </h3>
+            <span className="text-[10px] bg-slate-150 font-bold px-2.5 py-1 text-slate-600 rounded-full border border-slate-200 shadow-3xs">بضغطة زر واحدة للتواصل الفوري</span>
+          </div>
+
+          <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+            قم بصياغة قوالب الرسائل الجاهزة وتعديلها لتذكير طلابك بمواعيد الحصص المجدولة أو تحصيل الرسوم والذمم المستحقة من أولياء الأمور بضغطة زر واحدة. يمكنك تخصيص القالب واختيار اسم الطالب لمعاينة ومشاركة الرسالة فوراً.
+          </p>
+
+          {/* Warning notice banner */}
+          {whatsAppWarning && (
+            <motion.div 
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3 bg-red-50 border border-red-150 text-red-700 text-xs font-bold rounded-2xl"
+            >
+              {whatsAppWarning}
+            </motion.div>
+          )}
+
+          {/* Tabs for different templates */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {[
+              { id: 'reminder', label: '⏰ تذكير الموعد', bg: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
+              { id: 'dues', label: '💰 مطالبة بالرسوم', bg: 'bg-amber-50 border-amber-200 text-amber-700' },
+              { id: 'report', label: '🏆 تقرير وتشجيع', bg: 'bg-purple-50 border-purple-200 text-purple-700' },
+              { id: 'renew', label: '🎓 تجديد الاشتراك', bg: 'bg-rose-50 border-rose-200 text-rose-700' }
+            ].map(tab => {
+              const isActive = activeTemplateTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTemplateTab(tab.id as any)}
+                  className={`border p-2.5 rounded-xl text-xs font-extrabold transition-all active:scale-95 text-center cursor-pointer ${
+                    isActive 
+                      ? 'border-emerald-600 bg-emerald-500 text-white shadow-xs font-black' 
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1.5">
+            {/* Template editor */}
+            <div className="space-y-3 bg-slate-50/40 p-4 border border-slate-100 rounded-2xl">
+              <label className="text-xs font-black text-slate-700 block pr-1 flex items-center justify-start gap-1">
+                <span>✏️</span> صياغة وتخصيص نص القالب الأساسي:
+              </label>
+              <textarea
+                value={customTemplates[activeTemplateTab]}
+                onChange={(e) => {
+                  setCustomTemplates(prev => ({
+                    ...prev,
+                    [activeTemplateTab]: e.target.value
+                  }));
+                }}
+                rows={7}
+                className="w-full p-3.5 bg-white border border-slate-200 rounded-2xl text-[12.5px] leading-relaxed font-semibold text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-200 transition-all font-sans"
+                placeholder="اكتب القالب المفرغ هنا مع المتغيرات..."
+              />
+              <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl space-y-1.5">
+                <span className="text-[10px] font-extrabold text-slate-600 block">📌 الأكواد الديناميكية المتاحة لتجريفها تلقائياً:</span>
+                <div className="flex flex-wrap gap-1.5 text-[9.5px] font-bold text-slate-500">
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[اسم_الطالب]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[اسم_المعلم]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[المادة]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[الموعد]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[المبلغ_المتبقي]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[العملة]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[التقييم_العام]</span>
+                  <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">[عدد_الحصص]</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Interactive Previewer & Send actions */}
+            <div className="space-y-3 bg-slate-50/70 p-4 border border-slate-200 rounded-2xl flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-slate-700 block pr-1 flex items-center justify-start gap-1">
+                    <span>👥</span> اختر طالبًا من السجلات للمعاينة الفورية:
+                  </label>
+                  <select
+                    value={selectedPreviewStudentId}
+                    onChange={(e) => setSelectedPreviewStudentId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-600"
+                  >
+                    <option value="">-- اختر طالبًا (أو استخدم المعاينة الافتراضية) --</option>
+                    {students.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.type === 'course' ? 'كورس' : 'حساب حصص'} - {s.phone || 'بدون هاتف'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-xs font-black text-emerald-950 block pr-1 flex items-center justify-start gap-1">
+                    <span>👁️</span> معاينة الرسالة المستعرضة:
+                  </span>
+                  <div className="p-3.5 bg-white border border-slate-150 rounded-2xl text-[12px] leading-relaxed font-semibold text-slate-750 whitespace-pre-wrap select-text font-sans min-h-[140px] text-right">
+                    {getEvaluatedTemplate(customTemplates[activeTemplateTab], selectedPreviewStudentId)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-slate-200/50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = getEvaluatedTemplate(customTemplates[activeTemplateTab], selectedPreviewStudentId);
+                    navigator.clipboard.writeText(text);
+                    setCopiedTemplateId(activeTemplateTab);
+                    setTimeout(() => setCopiedTemplateId(null), 2500);
+                  }}
+                  className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-extrabold rounded-xl transition duration-150 cursor-pointer flex items-center justify-center gap-1.5 shadow-3xs"
+                >
+                  <Copy size={13} className="text-slate-500" />
+                  <span>{copiedTemplateId === activeTemplateTab ? 'تم النسخ! ✅' : 'نسخ النص'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = getEvaluatedTemplate(customTemplates[activeTemplateTab], selectedPreviewStudentId);
+                    handleOpenWhatsApp(selectedPreviewStudentId, text);
+                  }}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl transition duration-150 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/10"
+                >
+                  <Send size={12} />
+                  <span>إرسال عبر WhatsApp</span>
+                </button>
               </div>
             </div>
           </div>

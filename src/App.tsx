@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Student, Appointment, TeacherPreferences, ExamAppointment } from './types';
+import { syncStudentBadges } from './lib/rewardsHelper';
 import LockScreen from './components/LockScreen';
 import StudentPortal from './components/StudentPortal';
 import StudentList from './components/StudentList';
@@ -11,6 +12,7 @@ import NotificationCenter from './components/NotificationCenter';
 import ThemeStyleInjector from './components/ThemeStyleInjector';
 import Dashboard from './components/Dashboard';
 import TeacherChatHub from './components/TeacherChatHub';
+import RewardsDashboard from './components/RewardsDashboard';
 import { 
   Users, CalendarDays, BarChart3, Settings, LogOut, Lock, Award, 
   Menu, X, Sparkles, GraduationCap, ChevronDown, User, LayoutGrid,
@@ -124,7 +126,7 @@ export default function App() {
   const [examAppointments, setExamAppointments] = useState<ExamAppointment[]>([]);
   
   // App view control
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings' | 'chat'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings' | 'chat' | 'rewards'>('dashboard');
   const [navDropdownOpen, setNavDropdownOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(true);
@@ -367,12 +369,11 @@ export default function App() {
     if (storedStudents) {
       try {
         loadedStudents = JSON.parse(storedStudents);
-        setStudents(loadedStudents);
       } catch (e) {}
-    } else {
-      setStudents(DEFAULT_STUDENTS);
-      localStorage.setItem('teacherStudents', JSON.stringify(DEFAULT_STUDENTS));
     }
+    const syncedStudents = loadedStudents.map(s => syncStudentBadges(s).updatedStudent);
+    setStudents(syncedStudents);
+    localStorage.setItem('teacherStudents', JSON.stringify(syncedStudents));
 
     const storedAppointments = localStorage.getItem('teacherAppointments');
     let loadedAppointments = DEFAULT_APPOINTMENTS;
@@ -557,8 +558,9 @@ export default function App() {
   };
 
   const saveStudents = (newStudents: Student[]) => {
-    setStudents(newStudents);
-    localStorage.setItem('teacherStudents', JSON.stringify(newStudents));
+    const synced = newStudents.map(s => syncStudentBadges(s).updatedStudent);
+    setStudents(synced);
+    localStorage.setItem('teacherStudents', JSON.stringify(synced));
   };
 
   const saveAppointments = (newAppointments: Appointment[]) => {
@@ -660,6 +662,46 @@ export default function App() {
           list = [newAlert, ...list].slice(0, 50);
           localStorage.setItem('teacherActionAlerts', JSON.stringify(list));
           window.dispatchEvent(new Event('teacherAlertsUpdated'));
+        }
+      }
+
+      // Automatically sync newly registered payments to the budget ledger and balance
+      if (updatedFields.payments && updatedFields.payments.length > targetStudent.payments.length) {
+        const targetIds = new Set(targetStudent.payments.map(p => p.id));
+        const newPayments = updatedFields.payments.filter(p => !targetIds.has(p.id));
+
+        if (newPayments.length > 0) {
+          const savedBalance = localStorage.getItem('financial_budget_balance');
+          const savedLedger = localStorage.getItem('financial_budget_ledger_v1');
+
+          let currentBalance = savedBalance ? Number(savedBalance) : 1000;
+          let currentLedger: any[] = [];
+          
+          if (savedLedger) {
+            try {
+              currentLedger = JSON.parse(savedLedger);
+            } catch (e) {
+              console.error('Failed to parse budget ledger', e);
+            }
+          }
+
+          newPayments.forEach(payment => {
+            currentBalance += payment.amount;
+            const newEntry = {
+              id: `pay_sync_${payment.id || Date.now() + '_' + Math.random().toString(36).substring(2, 6)}`,
+              amount: payment.amount,
+              date: payment.date || new Date().toISOString().split('T')[0],
+              note: `دفعة مستلمة من الطالب: ${targetStudent.name}${payment.notes ? ` (${payment.notes})` : ''}`,
+              category: 'إيراد من طالب'
+            };
+            currentLedger = [newEntry, ...currentLedger];
+          });
+
+          localStorage.setItem('financial_budget_balance', String(currentBalance));
+          localStorage.setItem('financial_budget_ledger_v1', JSON.stringify(currentLedger));
+          
+          // Dispatch custom event to let financial components know the budget has updated
+          window.dispatchEvent(new Event('financialBudgetUpdated'));
         }
       }
     }
@@ -1066,6 +1108,21 @@ export default function App() {
 
             <button
               onClick={() => {
+                setActiveTab('rewards');
+                setSelectedStudentId(null);
+              }}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
+                activeTab === 'rewards'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/15'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <Award size={15} />
+              <span>لوحة الأوسمة 🏆</span>
+            </button>
+
+            <button
+              onClick={() => {
                 setActiveTab('settings');
                 setSelectedStudentId(null);
               }}
@@ -1199,6 +1256,24 @@ export default function App() {
 
           <button
             onClick={() => {
+              setActiveTab('rewards');
+              setSelectedStudentId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full text-right flex items-center justify-between px-4 py-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'rewards'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <Award size={16} className={`${activeTab === 'rewards' ? 'text-white' : 'text-slate-550'}`} />
+              <span>لوحة الأوسمة والجوائز 🏆</span>
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
               setActiveTab('settings');
               setSelectedStudentId(null);
               setMobileMenuOpen(false);
@@ -1304,6 +1379,7 @@ export default function App() {
                   <FinancialReports
                     students={students}
                     currency={preferences.currency}
+                    onUpdateStudent={handleUpdateStudent}
                   />
                 )}
 
@@ -1324,6 +1400,18 @@ export default function App() {
                     preferences={preferences}
                   />
                 )}
+
+                {activeTab === 'rewards' && (
+                  <RewardsDashboard
+                    students={students}
+                    preferences={preferences}
+                    onUpdateStudent={handleUpdateStudent}
+                    onSelectStudent={(id) => setSelectedStudentId(id)}
+                    onSwitchTab={(tab) => {
+                      setActiveTab(tab);
+                    }}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -1332,8 +1420,8 @@ export default function App() {
         <footer className="bg-slate-50 border-t border-slate-200/80 py-8 text-center text-slate-400 text-xs font-bold print:hidden z-10 w-full mt-auto">
           <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col items-center justify-center gap-2.5 select-none font-sans">
             <p className="text-slate-800 font-extrabold text-xs">تم تصميم البرنامج بواسطة</p>
-            <p className="text-indigo-600 font-black text-sm">Mohamed Abdella ( Abo Silem )</p>
-            <p className="text-[11px] text-slate-450 font-extrabold">عام {new Date().getFullYear()} • نسخة البرنامج v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</p>
+            <p className="text-indigo-600 font-black text-sm">Mohamed Abdella ( Abo Selim )</p>
+            <p className="text-[11px] text-slate-450 font-extrabold">{new Date().getFullYear()} • نسخة البرنامج v{(import.meta as any).env?.VITE_APP_VERSION || '1.3'}</p>
           </div>
         </footer>
       </div>

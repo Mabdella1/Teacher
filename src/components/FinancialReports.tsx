@@ -1,1359 +1,1101 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, FormEvent } from 'react';
 import { Student } from '../types';
 import { 
-  FileSpreadsheet, FileText, Calendar, ChevronDown, Users, CheckCircle2, AlertCircle, AlertTriangle, TrendingUp, PieChart as PieIcon,
-  Download, Loader2, Target, Percent, Coins, Printer, X
+  TrendingUp, Download, Coins, ArrowUpRight, ArrowDownRight, Wallet, Calendar, Plus, Minus, History, Trash2, FileText, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar
-} from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 
 interface FinancialReportsProps {
   students: Student[];
   currency: string;
+  onUpdateStudent?: (id: string, updatedFields: Partial<Student>) => void;
 }
 
-export default function FinancialReports({ students, currency }: FinancialReportsProps) {
-  // Setup default filter to current month/year
-  const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(() => String(now.getMonth() + 1).padStart(2, '0'));
-  const [selectedYear, setSelectedYear] = useState(() => String(now.getFullYear()));
-  const [showPrintWarning, setShowPrintWarning] = useState(false);
+interface BudgetLedgerEntry {
+  id: string;
+  amount: number; // positive for addition, negative for subtraction
+  date: string;
+  note: string;
+  category: string;
+}
+
+export default function FinancialReports({ students, currency = 'ج.م', onUpdateStudent }: FinancialReportsProps) {
+  const [activeTab, setActiveTab] = useState<'reports' | 'budget' | 'expenses'>('reports');
+  const [activePeriod, setActivePeriod] = useState<'all' | 'annual' | 'monthly' | 'weekly' | 'daily'>('monthly');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-  const [isDetailedReportModalOpen, setIsDetailedReportModalOpen] = useState(false);
+  
+  // Budget States
+  const [budgetBalance, setBudgetBalance] = useState<number>(0);
+  const [ledger, setLedger] = useState<BudgetLedgerEntry[]>([]);
+  const [customNote, setCustomNote] = useState<string>('');
+  const [customAmount, setCustomAmount] = useState<string>('');
+  const [customType, setCustomType] = useState<'add' | 'subtract'>('add');
 
-  // Target Monthly Budget logic
-  const budgetKey = `monthly_earnings_target_${selectedYear}_${selectedMonth}`;
-  const [targetBudget, setTargetBudget] = useState<number>(5000);
+  // Input states for setting exact budget and recording lesson payments
+  const [setAmountInput, setSetAmountInput] = useState<string>('');
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [lessonAmount, setLessonAmount] = useState<string>('');
+  const [lessonNotes, setLessonNotes] = useState<string>('');
+  const [lessonPaymentDate, setLessonPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
+  // Ref for the single page A4 PDF capture
+  const printableReportRef = useRef<HTMLDivElement>(null);
+
+  // Load Budget from LocalStorage
   useEffect(() => {
-    const saved = localStorage.getItem(budgetKey);
-    if (saved) {
-      setTargetBudget(Number(saved));
-    } else {
-      const globalSaved = localStorage.getItem('monthly_earnings_target_global');
-      setTargetBudget(globalSaved ? Number(globalSaved) : 5000);
-    }
-  }, [selectedMonth, selectedYear, budgetKey]);
+    const loadBudgetFromStorage = () => {
+      const savedBalance = localStorage.getItem('financial_budget_balance');
+      const savedLedger = localStorage.getItem('financial_budget_ledger_v1');
+      
+      if (savedBalance) {
+        setBudgetBalance(Number(savedBalance));
+      } else {
+        setBudgetBalance(1000); // Default budget initializer
+        localStorage.setItem('financial_budget_balance', '1000');
+      }
 
-  const handleUpdateTargetBudget = (value: number) => {
-    const maxVal = Math.max(0, value);
-    setTargetBudget(maxVal);
-    localStorage.setItem(budgetKey, String(maxVal));
-    localStorage.setItem('monthly_earnings_target_global', String(maxVal));
+      if (savedLedger) {
+        try {
+          setLedger(JSON.parse(savedLedger));
+        } catch (e) {
+          console.error('Failed to parse budget ledger', e);
+        }
+      }
+    };
+
+    loadBudgetFromStorage();
+
+    // Listen to custom updates to the budget
+    window.addEventListener('financialBudgetUpdated', loadBudgetFromStorage);
+    return () => {
+      window.removeEventListener('financialBudgetUpdated', loadBudgetFromStorage);
+    };
+  }, []);
+
+  // Save changes to localStorage
+  const saveBudget = (newBalance: number, newLedger: BudgetLedgerEntry[]) => {
+    setBudgetBalance(newBalance);
+    setLedger(newLedger);
+    localStorage.setItem('financial_budget_balance', String(newBalance));
+    localStorage.setItem('financial_budget_ledger_v1', JSON.stringify(newLedger));
   };
 
-  const MONTHS = [
-    { value: '01', name: 'يناير / كانون الثاني' },
-    { value: '02', name: 'فبراير / شباط' },
-    { value: '03', name: 'مارس / آذار' },
-    { value: '04', name: 'أبريل / نيسان' },
-    { value: '05', name: 'مايو / أيار' },
-    { value: '06', name: 'يونيو / حزيران' },
-    { value: '07', name: 'يوليو / تموز' },
-    { value: '08', name: 'أغسطس / آب' },
-    { value: '09', name: 'سبتمبر / أيلول' },
-    { value: '10', name: 'أكتوبر / تشرين الأول' },
-    { value: '11', name: 'نوفمبر / تشرين الثاني' },
-    { value: '12', name: 'ديسمبر / كانون الأول' },
-  ];
+  const handleQuickBudgetChange = (amount: number, isAddition: boolean) => {
+    const change = isAddition ? amount : -amount;
+    const newBalance = budgetBalance + change;
+    
+    const newEntry: BudgetLedgerEntry = {
+      id: 'quick_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      amount: change,
+      date: new Date().toISOString().split('T')[0],
+      note: isAddition ? `إضافة سريعة فئة ${amount}` : `سحب سريع فئة ${amount}`,
+      category: isAddition ? 'تغذية الميزانية' : 'مصروفات عامة'
+    };
 
-  const years = Array.from({ length: 5 }, (_, i) => String(now.getFullYear() - 2 + i));
+    saveBudget(newBalance, [newEntry, ...ledger]);
+  };
 
-  // Filter and process stats for selected month/year
-  const reportItems = students.map(student => {
-    // 1. Filter sessions of that month
-    const monthlySessions = student.sessions.filter(sess => {
-      const [y, m] = sess.date.split('-');
-      return y === selectedYear && m === selectedMonth;
-    });
+  const handleCustomBudgetSubmitWithType = (e: FormEvent, forcedType: 'add' | 'subtract') => {
+    e.preventDefault();
+    const parsedAmount = parseFloat(customAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) return;
 
-    // 2. Filter payments of that month
-    const monthlyPayments = student.payments.filter(pay => {
-      const [y, m] = pay.date.split('-');
-      return y === selectedYear && m === selectedMonth;
-    });
+    const change = forcedType === 'add' ? parsedAmount : -parsedAmount;
+    const newBalance = budgetBalance + change;
 
-    const totalPaidThisMonth = monthlyPayments.reduce((sum, p) => sum + p.amount, 0);
-    const sessionsCountThisMonth = monthlySessions.length;
+    const newEntry: BudgetLedgerEntry = {
+      id: 'custom_' + Date.now(),
+      amount: change,
+      date: new Date().toISOString().split('T')[0],
+      note: customNote.trim() || (forcedType === 'add' ? 'إيداع إضافي' : 'مصروفات مخصصة'),
+      category: forcedType === 'add' ? 'إيرادات خارجية' : 'تكاليف تشغيلية'
+    };
 
-    // Expected profit calculations:
-    let expectedProfitThisMonth = 0;
-    let studentOustandingBalance = 0;
+    saveBudget(newBalance, [newEntry, ...ledger]);
+    setCustomAmount('');
+    setCustomNote('');
+  };
 
-    if (student.type === 'lesson') {
-      // Direct multiplication of rates of completed sessions
-      expectedProfitThisMonth = sessionsCountThisMonth * (student.lessonRate || 0);
+  // State for success feedback message
+  const [successFeedback, setSuccessFeedback] = useState<string>('');
+
+  const handleSetExactBudget = (e: FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(setAmountInput);
+    if (isNaN(parsed) || parsed < 0) return;
+    const diff = parsed - budgetBalance;
+    const newEntry: BudgetLedgerEntry = {
+      id: 'set_' + Date.now(),
+      amount: diff,
+      date: new Date().toISOString().split('T')[0],
+      note: `تثبيت رصيد الميزانية يدوياً بقيمة: ${parsed}`,
+      category: 'تحديد الميزانية'
+    };
+    saveBudget(parsed, [newEntry, ...ledger]);
+    setSetAmountInput('');
+    setSuccessFeedback(`تم بنجاح تحديد الميزانية وتعديل رصيدها الاجمالي إلى: ${parsed} ${currency}`);
+    setTimeout(() => setSuccessFeedback(''), 5000);
+  };
+
+  const handleRegisterLessonPayment = (e: FormEvent) => {
+    e.preventDefault();
+    const parsedAmount = parseFloat(lessonAmount);
+    if (!selectedStudentId || isNaN(parsedAmount) || parsedAmount <= 0) return;
+
+    const targetStudent = students.find(s => s.id === selectedStudentId);
+    if (!targetStudent) return;
+
+    const newPaymentObj = {
+      id: 'pay_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      amount: parsedAmount,
+      date: lessonPaymentDate || new Date().toISOString().split('T')[0],
+      notes: lessonNotes.trim() || 'دفعة حصة مسجلة مباشرة'
+    };
+
+    if (onUpdateStudent) {
+      onUpdateStudent(selectedStudentId, {
+        payments: [newPaymentObj, ...(targetStudent.payments || [])]
+      });
+      // Also record it inside our ledger log right away!
+      const newBudget = budgetBalance + parsedAmount;
+      const budgetEntry: BudgetLedgerEntry = {
+        id: 'pay_sync_' + newPaymentObj.id,
+        amount: parsedAmount,
+        date: newPaymentObj.date,
+        note: `تسجيل دفعة حصة للطالب: ${targetStudent.name}${newPaymentObj.notes ? ` (${newPaymentObj.notes})` : ''}`,
+        category: 'إيراد من طالب'
+      };
+      saveBudget(newBudget, [budgetEntry, ...ledger]);
       
-      const allSessionsCost = student.sessions.length * (student.lessonRate || 0);
-      const allPaymentsPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
-      studentOustandingBalance = Math.max(0, allSessionsCost - allPaymentsPaid);
-    } else {
-      // Proportional monthly Share with extra sessions accounted separately
-      const standardMonthlySessions = monthlySessions.filter(s => !s.isExtra);
-      const extraMonthlySessions = monthlySessions.filter(s => s.isExtra);
-      
-      const sessionRateProportional = (student.coursePrice || 0) / (student.totalLessonsCount || 1);
-      const standardEarnings = standardMonthlySessions.length * sessionRateProportional;
-      const extraEarnings = extraMonthlySessions.reduce((sum, s) => sum + (s.extraPrice || 0), 0);
-      expectedProfitThisMonth = Number((standardEarnings + extraEarnings).toFixed(1)) || 0;
-
-      const allPaymentsPaid = student.payments.reduce((sum, p) => sum + p.amount, 0);
-      const totalExtraCost = student.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0);
-      const totalCost = (student.coursePrice || 0) + totalExtraCost;
-      studentOustandingBalance = Math.max(0, totalCost - allPaymentsPaid);
+      // Clear inputs
+      setLessonAmount('');
+      setLessonNotes('');
+      // Set success message
+      setSuccessFeedback(`تم بنجاح تسجيل دفعة مالية بقيمة ${parsedAmount} ${currency} للطالب ${targetStudent.name}`);
+      setTimeout(() => setSuccessFeedback(''), 5000);
     }
+  };
+
+  const handleDeleteLedgerEntry = (id: string) => {
+    const targetEntry = ledger.find(e => e.id === id);
+    if (!targetEntry) return;
+
+    const newBalance = budgetBalance - targetEntry.amount; // reverse the transaction
+    const newLedger = ledger.filter(e => e.id !== id);
+    saveBudget(newBalance, newLedger);
+  };
+
+  const handleResetExpenses = () => {
+    if (!window.confirm("هل أنت متأكد من تصفير وحذف كافة قيود المصروفات المسجلة بالمحفظة بالكامل؟ لا يمكن التراجع عن هذا الإجراء.")) {
+      return;
+    }
+    const cleanedLedger = ledger.filter(entry => entry.category !== 'مصروفات عامة' && !(entry.amount < 0 && entry.id.startsWith('manual_')));
+    
+    // Recalculate and reimburse the deleted expenses to budget balance
+    const deletedExpensesSum = ledger
+      .filter(entry => entry.category === 'مصروفات عامة' || (entry.amount < 0 && entry.id.startsWith('manual_')))
+      .reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+    
+    const newBalance = budgetBalance + deletedExpensesSum;
+    saveBudget(newBalance, cleanedLedger);
+    
+    setSuccessFeedback('تم بنجاح تصفير وإلغاء كافة قيود المصروفات من السجل! 🧹');
+    setTimeout(() => setSuccessFeedback(''), 5500);
+  };
+
+  // Parse Year, Month, Day from item.date to check if it matches period filter
+  const filterByPeriod = <T extends { date: string }>(items: T[]): T[] => {
+    if (!items || !Array.isArray(items)) return [];
+    
+    const today = new Date();
+    const curYear = today.getFullYear();
+    const curMonth = String(today.getMonth() + 1).padStart(2, '0');
+    
+    return items.filter(item => {
+      if (!item.date) return false;
+      const [yStr, mStr, dStr] = item.date.split('-');
+      const y = Number(yStr);
+      const m = Number(mStr);
+      const d = Number(dStr);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return false;
+      
+      const itemDate = new Date(y, m - 1, d);
+
+      if (activePeriod === 'all') {
+        return true;
+      } else if (activePeriod === 'annual') {
+        return y === curYear;
+      } else if (activePeriod === 'monthly') {
+        return y === curYear && String(m).padStart(2, '0') === curMonth;
+      } else if (activePeriod === 'weekly') {
+        // within last 7 days
+        const diffMs = today.getTime() - itemDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        return diffDays >= 0 && diffDays <= 7;
+      } else if (activePeriod === 'daily') {
+        // Last 2 days (Today and yesterday)
+        const diffMs = today.getTime() - itemDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        return diffDays >= 0 && diffDays <= 2;
+      }
+      return true;
+    });
+  };
+
+  // Perform Period Calculations for the Report
+  const reportBreakdown = students.map(student => {
+    const periodSessions = filterByPeriod(student.sessions || []);
+    const periodPayments = filterByPeriod(student.payments || []);
+
+    const periodPaymentsSum = periodPayments.reduce((sum, p) => sum + p.amount, 0);
+    
+    // Proportional Expected Earnings
+    let expectedEarning = 0;
+    if (student.type === 'lesson') {
+      expectedEarning = periodSessions.reduce((sum, s) => {
+        return sum + (s.extraPrice !== undefined ? s.extraPrice : (student.lessonRate || 100));
+      }, 0);
+    } else {
+      const baseSessionRate = (student.coursePrice || 0) / (student.totalLessonsCount || 8 || 1);
+      expectedEarning = periodSessions.reduce((sum, s) => {
+        const rate = s.isExtra && s.extraPrice !== undefined ? s.extraPrice : baseSessionRate;
+        return sum + rate;
+      }, 0);
+      // round to 1 decimal place
+      expectedEarning = Math.round(expectedEarning * 10) / 10;
+    }
+
+    // Outstanding Dues for this student specifically in this period
+    // If they were supposed to pay expectedEarning but paid periodPaymentsSum
+    const dues = Math.max(0, expectedEarning - periodPaymentsSum);
 
     return {
       studentId: student.id,
       studentName: student.name,
       studentType: student.type,
-      sessionsCount: sessionsCountThisMonth,
-      totalEarnings: expectedProfitThisMonth,
-      totalPaid: totalPaidThisMonth,
-      overallOutstanding: studentOustandingBalance,
+      sessionsCount: periodSessions.length,
+      income: expectedEarning,
+      paid: periodPaymentsSum,
+      dues: dues
     };
   });
 
-  // Totals
-  const totalMonthEarnings = reportItems.reduce((sum, item) => sum + item.totalEarnings, 0);
-  const totalMonthPayments = reportItems.reduce((sum, item) => sum + item.totalPaid, 0);
-  const totalPendingDue = reportItems.reduce((sum, item) => sum + item.overallOutstanding, 0);
-  const activeSessionsThisMonth = reportItems.reduce((sum, item) => sum + item.sessionsCount, 0);
+  // Calculate Aggregates for display
+  const totalIncome = reportBreakdown.reduce((sum, item) => sum + item.income, 0);
+  const totalPayments = reportBreakdown.reduce((sum, item) => sum + item.paid, 0);
+  const totalOutstandingDues = reportBreakdown.reduce((sum, item) => sum + item.dues, 0);
+  const totalSessionsCount = reportBreakdown.reduce((sum, item) => sum + item.sessionsCount, 0);
 
-  // 1. Calculate Yearly Trend Data (12 Months of selectedYear)
-  const getYearlyTrendData = () => {
-    return MONTHS.map(m => {
-      let monthlyEarnings = 0;
-      let monthlyPayments = 0;
+  // Wallet summary variables: Revenues (all payments + manual revenues) and Expenses
+  const computedRevenues = students.reduce((sum, s) => {
+    return sum + (s.payments || []).reduce((pSum, p) => pSum + p.amount, 0);
+  }, 0) + ledger
+    .filter(e => e.amount > 0 && (e.category === 'إيرادات عامة' || e.id.startsWith('manual_rev_')))
+    .reduce((sum, e) => sum + e.amount, 0);
 
-      students.forEach(student => {
-        // Sessions in this specific month
-        const sessions = student.sessions.filter(sess => {
-          const [y, mon] = sess.date.split('-');
-          return y === selectedYear && mon === m.value;
-        });
+  const computedExpenses = ledger
+    .filter(e => e.amount < 0 && (e.category === 'مصروفات عامة' || e.id.startsWith('manual_exp_')))
+    .reduce((sum, e) => sum + Math.abs(e.amount), 0);
 
-        // Payments in this specific month
-        const payments = student.payments.filter(pay => {
-          const [y, mon] = pay.date.split('-');
-          return y === selectedYear && mon === m.value;
-        });
-
-        const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-        monthlyPayments += totalPaid;
-
-        if (student.type === 'lesson') {
-          monthlyEarnings += sessions.length * (student.lessonRate || 0);
-        } else {
-          const sessionRateProportional = (student.coursePrice || 0) / (student.totalLessonsCount || 1);
-          monthlyEarnings += Number((sessions.length * sessionRateProportional).toFixed(1)) || 0;
-        }
-      });
-
-      return {
-        name: m.name.split(' / ')[0], // e.g. "يناير"
-        'الأرباح المستحقة': monthlyEarnings,
-        'المدفوعات المستلمة': monthlyPayments,
-      };
-    });
+  // Period label translator
+  const getPeriodArabicLabel = () => {
+    switch (activePeriod) {
+      case 'all': return 'الحسابات الإجمالية (كافة الأوقات)';
+      case 'annual': return `التقرير السنوي لعام ${new Date().getFullYear()}`;
+      case 'monthly': return `التقرير الشهري لشهر ${new Date().toLocaleString('ar-EG', { month: 'long' })} ${new Date().getFullYear()}`;
+      case 'weekly': return 'التقرير الأسبوعي لآخر 7 أيام';
+      case 'daily': return 'تقرير اليومين الماضيين (اليوم وأمس)';
+      default: return 'التقرير المالي';
+    }
   };
 
-  const yearlyTrendData = getYearlyTrendData();
+  // Recharts payload
+  const chartData = [
+    { name: 'إجمالي الدخل 🔵', value: totalIncome, fill: '#2563eb' },
+    { name: 'المدفوعات المستلمة 🟢', value: totalPayments, fill: '#16a34a' },
+    { name: 'المستحقات المعلقة 🔴', value: totalOutstandingDues, fill: '#dc2626' }
+  ];
 
-  // 2. Month-specific breakdown data for Pie Chart
-  let lessonPaymentsTotal = 0;
-  let coursePaymentsTotal = 0;
-
-  reportItems.forEach(item => {
-    if (item.studentType === 'lesson') {
-      lessonPaymentsTotal += item.totalPaid;
-    } else {
-      coursePaymentsTotal += item.totalPaid;
-    }
-  });
-
-  const allZero = lessonPaymentsTotal === 0 && coursePaymentsTotal === 0 && totalPendingDue === 0;
-  
-  const paymentDistributionData = allZero
-    ? [{ name: 'لا توجد حركات مالية', value: 1, color: '#cbd5e1' }]
-    : [
-        { name: 'مدفوعات حصص يومية', value: lessonPaymentsTotal, color: '#10b981' },
-        { name: 'مدفوعات كورس كامل', value: coursePaymentsTotal, color: '#3b82f6' },
-        { name: 'ذمم طلبة معلقة', value: totalPendingDue, color: '#ef4444' }
-      ];
-
-  // Custom tooltips for Arabic localization
-  const CustomTooltipDynamic = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900/90 text-white p-3.5 rounded-2xl border border-slate-800 shadow-2xl text-right font-sans text-xs space-y-1.5 backdrop-blur-md">
-          <p className="font-extrabold pb-1 border-b border-white/10 text-slate-200">{label}</p>
-          {payload.map((entry: any, index: number) => {
-            const entryColor = entry.payload.color || entry.color;
-            return (
-              <p key={index} className="flex justify-between items-center gap-5 font-bold">
-                <span className="text-[10.5px] flex items-center gap-1" style={{ color: entryColor }}>
-                  <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: entryColor }} />
-                  {entry.name}:
-                </span>
-                <span className="font-mono text-slate-50">{entry.value} {currency}</span>
-              </p>
-            );
-          })}
-        </div>
-      );
-    }
-    return null;
-  };
-
-  // Export Monthly Report to CSV
-  const handleExportMonthCSV = () => {
-    let csvContent = '\ufeff'; // UTF-8 BOM so Excel opens with correct Arabic characters
-    csvContent += `تقرير أرباح وحسابات المعلم لشهر: ${selectedMonth} - ${selectedYear}\n`;
-    csvContent += `العملة المعتمدة: ${currency}\n`;
-    csvContent += `إجمالي المستحقات المترتبة بالشهر: ${totalMonthEarnings} ${currency}\n`;
-    csvContent += `إجمالي الدفعات المستلمة بالشهر: ${totalMonthPayments} ${currency}\n`;
-    csvContent += `إجمالي الذمم المدونة المستحقة للطلبة: ${totalPendingDue} ${currency}\n`;
-    csvContent += `إجمالي حصص المدرس المنجزة: ${activeSessionsThisMonth} حصة\n\n`;
-
-    // Headers
-    csvContent += 'اسم الطالب,نظام التعلم,الحصص المكتملة هذا الشهر,ربحية المدرس المستحقة من حصص الشهر,الدفعات النقدية المسددة هذا الشهر,متبقي مستحقات كلية متأخرة للآن\n';
-
-    reportItems.forEach(item => {
-      const typeLabel = item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس';
-      csvContent += `"${item.studentName}","${typeLabel}","${item.sessionsCount}","${item.totalEarnings} ${currency}","${item.totalPaid} ${currency}","${item.overallOutstanding} ${currency}"\n`;
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `تقرير_أرباح_TEACHER_شهر_${selectedMonth}_${selectedYear}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handlePrintPDF = async () => {
-    const element = document.getElementById('comprehensive-monthly-report-pdf');
-    if (!element) {
-      console.error('Target element "comprehensive-monthly-report-pdf" not found');
-      return;
-    }
-
+  // Function to capture offscreen/onscreen design to high-quality PDF containing exactly ONE elegant page
+  const handleExportPDF = async () => {
+    const element = printableReportRef.current;
+    if (!element) return;
+    
     setIsGeneratingPDF(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-
-      const elementWidth = element.offsetWidth || 850;
-      const elementHeight = element.offsetHeight || 1100;
-
+      // Force preview of elements to settle animations
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const width = 800; // Fixed A4 width factor
+      const height = 1130; // Fixed A4 height factor
+      
       const imgData = await toPng(element, {
-        pixelRatio: 2.2,
-        cacheBust: true,
-        backgroundColor: '#ffffff',
+        width: width,
+        height: height,
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left',
+          width: `${width}px`,
+          height: `${height}px`,
+          backgroundColor: '#ffffff'
+        },
+        pixelRatio: 2.2, // high quality rasterization
+        cacheBust: true
       });
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgWidth = pdfWidth;
-      const imgHeight = (elementHeight * pdfWidth) / elementWidth;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`التقرير_المالي_والأداء_الشامل_شهر_${selectedMonth}_${selectedYear}.pdf`);
-    } catch (err) {
-      console.error('Failed to generate PDF:', err);
-      alert('حدث خطأ أثناء رصد وتحميل كشف الـ PDF. يرجى تجربة فتح التطبيق في علامة تبويب مستقلة وإعادة المحاولة.');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
-
-  const handleExportDetailedPDF = async () => {
-    const element = document.getElementById('financial-detailed-report-printable-area');
-    if (!element) {
-      console.error('Target element "financial-detailed-report-printable-area" not found');
-      return;
-    }
-
-    setIsGeneratingPDF(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-
-      const elementWidth = element.offsetWidth || 850;
-      const elementHeight = element.offsetHeight || 1100;
-
-      const imgData = await toPng(element, {
-        pixelRatio: 2.2,
-        cacheBust: true,
-        backgroundColor: '#ffffff',
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
       });
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      const imgWidth = pdfWidth;
-      const imgHeight = (elementHeight * pdfWidth) / elementWidth;
-      
-      let heightLeft = imgHeight;
-      let position = 0;
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pdfHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`تقرير_المستحقات_التفصيلي_TEACHER_شهر_${selectedMonth}_${selectedYear}.pdf`);
-    } catch (err) {
-      console.error('Failed to generate detailed PDF:', err);
-      alert('حدث خطأ أثناء رصد وتحميل كشف الـ PDF. يرجى تجربة فتح التطبيق في علامة تبويب مستقلة وإعادة المحاولة.');
+      // Draw exactly on one single sheet matching boundaries perfectly
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      pdf.save(`التقرير_المالي_${activePeriod}_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      alert('حدث خطأ أثناء استخراج التقرير بصيغة PDF. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsGeneratingPDF(false);
     }
   };
 
   return (
-    <div className="space-y-6 text-right font-sans">
-      {/* Filters Form */}
-      <div className="premium-card p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className="space-y-6 text-right font-sans" dir="rtl">
+      
+      {/* HEADER SECTION & TABS */}
+      <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
         <div>
-          <h3 className="text-base font-extrabold text-blue-900 flex items-center gap-1.5">
-            <Calendar className="text-blue-600" size={18} />
-            تصفية التقرير المالي لشهر محدد
-          </h3>
-          <p className="text-[11px] text-slate-500 mt-1">يحتسب البرنامج الإحصائيات والأرباح حسب تاريخ ومقدار حصص ودفعات الشهر المختار.</p>
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <Coins size={22} className="text-blue-600 animate-pulse" />
+            نظام الإدارة المالية الشامل 📊
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">تتبع الدخل الإجمالي، المدفوعات والاشتراكات، وضبط ميزانية وميزان المصروفات فورياً.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Month Selector */}
-          <div className="relative">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="appearance-none bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2 pr-4 pl-9 text-xs rounded-xl font-bold cursor-pointer hover:border-slate-350 transition focus:outline-none"
-            >
-              {MONTHS.map(m => (
-                <option key={m.value} value={m.value}>{m.name}</option>
-              ))}
-            </select>
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-              <ChevronDown size={14} />
-            </span>
-          </div>
-
-          {/* Year Selector */}
-          <div className="relative font-sans">
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="appearance-none bg-slate-50 border border-slate-200 text-slate-800 px-4 py-2 pr-4 pl-9 text-xs rounded-xl font-bold cursor-pointer hover:border-slate-350 transition focus:outline-none"
-            >
-              {years.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-              <ChevronDown size={14} />
-            </span>
-          </div>
-
+        {/* Segmented control for main view categories */}
+        <div className="flex flex-row items-center justify-center bg-slate-50 border border-slate-200/60 p-1.5 rounded-2xl shrink-0 gap-1.5 md:flex-nowrap">
           <button
-            onClick={handleExportMonthCSV}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm active:scale-95 duration-200"
+            onClick={() => setActiveTab('reports')}
+            className={`px-4 py-2 text-xs font-black rounded-xl transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              activeTab === 'reports'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/50'
+            }`}
           >
-            <FileSpreadsheet size={15} />
-            <span>تصدير تقرير Excel</span>
+            التقارير المالية 📈
           </button>
-
           <button
-            onClick={() => setIsDetailedReportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm active:scale-95 duration-200"
+            onClick={() => setActiveTab('expenses')}
+            className={`px-4 py-2 text-xs font-black rounded-xl transition-all duration-200 cursor-pointer whitespace-nowrap ${
+              activeTab === 'expenses'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/50'
+            }`}
           >
-            <FileText size={15} />
-            <span>استخراج تقرير تفصيلي للطباعة (PDF)</span>
-          </button>
-
-          <button
-            onClick={handlePrintPDF}
-            disabled={isGeneratingPDF}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-50 border border-rose-150 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-xl transition cursor-pointer shadow-sm disabled:opacity-50 active:scale-95 duration-200"
-          >
-            {isGeneratingPDF ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <Download size={15} />
-            )}
-            <span>{isGeneratingPDF ? 'جاري التنزيل...' : 'تنزيل تقرير PDF تلقائياً'}</span>
+            المصروفات 💸
           </button>
         </div>
       </div>
 
-      {/* Totals Grid Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Earned based on sessions completed */}
-        <div className="premium-card p-5 flex flex-col justify-between h-28">
-          <p className="text-xs text-slate-500 font-bold">صافي أرباح حصص الشهر المستحقة</p>
-          <div>
-            <span className="text-2xl font-black text-slate-800">{totalMonthEarnings}</span>
-            <span className="text-xs mr-1 text-slate-500">{currency}</span>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium">القيمة المقابلة للحصص المنقضية بالشهر</p>
-        </div>
-
-        {/* Total Paid / Collected this month */}
-        <div className="premium-card p-5 flex flex-col justify-between h-28">
-          <p className="text-xs text-slate-500 font-bold">المدفوعات والمستلم الفعلي بالشهر</p>
-          <div>
-            <span className="text-2xl font-black text-emerald-600">+{totalMonthPayments}</span>
-            <span className="text-xs mr-1 text-emerald-700">{currency}</span>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium">السيولة النقدية الداخلة والمدفوعة</p>
-        </div>
-
-        {/* Outstandings */}
-        <div className="premium-card p-5 flex flex-col justify-between h-28">
-          <p className="text-xs text-slate-500 font-bold">إجمالي المتأخرات المتبقية (ذمم كلية)</p>
-          <div>
-            <span className="text-2xl font-black text-red-600">{totalPendingDue}</span>
-            <span className="text-xs mr-1 text-slate-400">{currency}</span>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium font-sans">المبلغ الإجمالي المطلوب تحصيله حالياً</p>
-        </div>
-
-        {/* Sessions Completed count */}
-        <div className="premium-card p-5 flex flex-col justify-between h-28">
-          <p className="text-xs text-slate-500 font-bold">عدد ساعات/حصص حضور الشهر</p>
-          <div>
-            <span className="text-2xl font-black text-slate-850">{activeSessionsThisMonth}</span>
-            <span className="text-xs mr-1 text-slate-500">حصة منقضية</span>
-          </div>
-          <p className="text-[10px] text-slate-400 font-medium">مجموع عطاء المدرس بهذا الشهر</p>
-        </div>
-      </div>
-
-      {/* Target Monthly Earnings Budget Tracker & Comparison Chart */}
-      <div className="premium-card p-6 space-y-6">
-        <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h3 className="text-base font-extrabold text-[#0f172a] flex items-center gap-2">
-              <Target className="text-indigo-600 animate-pulse" size={20} />
-              متابعة ميزانية الأرباح ومؤشر تحقيق الأهداف الشهرية 🎯
-            </h3>
-            <p className="text-xs text-slate-500">
-              قارن ميزانية الأرباح المستهدفة لشهر {MONTHS.find(m => m.value === selectedMonth)?.name.split(' / ')[0]} {selectedYear} مع صافي الأرباح المحققة والمدفوعات الفعلية.
-            </p>
-          </div>
-
-          {/* Budget Input Controls */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200/80 p-1.5 rounded-2xl w-full md:w-auto">
-            <span className="text-xs text-slate-500 font-extrabold px-2 flex items-center gap-1">
-              <Coins size={14} className="text-slate-400" />
-              الميزانية المستهدفة:
-            </span>
-            <div className="relative flex items-center">
-              <input
-                type="number"
-                min="0"
-                step="500"
-                value={targetBudget || 0}
-                onChange={(e) => handleUpdateTargetBudget(Number(e.target.value))}
-                className="w-28 bg-white border border-slate-200 focus:border-indigo-500 rounded-xl py-1.5 px-3 pl-8 text-xs font-black text-slate-800 text-center outline-none shadow-3xs"
-              />
-              <span className="absolute left-2 text-[10px] text-slate-450 font-bold pointer-events-none">
-                {currency}
-              </span>
-            </div>
-            
-            {/* Quick increase/decrease buttons */}
-            <div className="flex gap-1">
-              <button 
-                onClick={() => handleUpdateTargetBudget((targetBudget || 0) + 1000)}
-                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black cursor-pointer transition active:scale-95"
-                title="إضافة 1000"
-              >
-                +1K
-              </button>
-              <button 
-                onClick={() => handleUpdateTargetBudget((targetBudget || 0) + 500)}
-                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-[10px] font-black cursor-pointer transition active:scale-95"
-                title="إضافة 500"
-              >
-                +500
-              </button>
-              <button 
-                onClick={() => handleUpdateTargetBudget(Math.max(0, (targetBudget || 0) - 500))}
-                className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-650 rounded-lg text-[10px] font-black cursor-pointer transition active:scale-95"
-                title="طرح 500"
-              >
-                -500
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Breakdown dashboard */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Right/Stats Column */}
-          <div className="space-y-4 flex flex-col justify-between">
-            <div className="bg-slate-50/60 border border-slate-100 p-5 rounded-3xl space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500 font-bold">نسبة إنجاز الهدف المالي</span>
-                <span className={`text-xs font-black px-2.5 py-1 rounded-xl flex items-center gap-1 ${
-                  targetBudget > 0 && totalMonthEarnings >= targetBudget 
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                }`}>
-                  <Percent size={12} />
-                  {targetBudget > 0 ? Math.round((totalMonthEarnings / targetBudget) * 100) : 100}%
-                </span>
-              </div>
-
-              {/* Styled modern progress bar with dynamic glow */}
-              <div className="space-y-2">
-                <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200/20 relative">
-                  <div 
-                    className={`h-full rounded-full transition-all duration-700 ease-out ${
-                      targetBudget > 0 && totalMonthEarnings >= targetBudget
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]'
-                    }`}
-                    style={{ width: `${Math.min(100, targetBudget > 0 ? Math.round((totalMonthEarnings / targetBudget) * 100) : 100)}%` }}
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between text-[11px] text-slate-450 font-bold">
-                  <span>0%</span>
-                  <span>الهدف: {targetBudget} {currency}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Motivational status message */}
-            <div className="bg-white border border-slate-100 rounded-3xl p-4 flex items-start gap-3 shadow-3xs">
-              <div className="bg-indigo-50 text-indigo-600 p-2 rounded-xl mt-0.5 shrink-0">
-                <Target size={16} />
-              </div>
-              <div className="space-y-1 text-right">
-                <h4 className="text-xs font-black text-slate-800">حالة مؤشر المستهدف المالي</h4>
-                <p className="text-[11px] text-slate-500 leading-relaxed font-semibold">
-                  {(() => {
-                    const percent = targetBudget > 0 ? Math.round((totalMonthEarnings / targetBudget) * 100) : 100;
-                    if (percent >= 100) {
-                      return "🏆 تم تحقيق الهدف المالي لشهر التصفية بالكامل! لقد قمت بعمل رائع ومثمر هذا الشهر.";
-                    } else if (percent >= 75) {
-                      return "✨ ممتاز! أنت على وشك تحقيق الهدف بالكامل، المتبقي جزء بسيط جداً لتحقيق ميزانيتك.";
-                    } else if (percent >= 45) {
-                      return "📈 تقدم واعد وجيد جداً! استمر في تسجيل وإتمام الحصص المجدولة للطلبة لزيادة نسبة العائد.";
-                    } else if (percent > 0) {
-                      return "🎯 خطوة بداية صحيحة، تم تسجيل بعض أرباح الحصص المنجزة وجاري التقدم نحو موازنة الهدف.";
-                    } else {
-                      return "💤 لم يتم رصد أي أرباح مستحقة للشهر حتى الآن. يرجى البدء في تسجيل حضور الطلاب ومتابعتهم.";
-                    }
-                  })()}
-                </p>
-              </div>
-            </div>
-
-            {/* Simple numeric list highlights */}
-            <div className="grid grid-cols-2 gap-3.5">
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-right">
-                <p className="text-[10px] text-slate-400 font-bold font-sans">الأرباح المستهدفة</p>
-                <p className="text-xs font-black text-slate-750 mt-1">{targetBudget} {currency}</p>
-              </div>
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-right">
-                <p className="text-[10px] text-slate-400 font-bold font-sans">الأرباح الفعلية حالياً</p>
-                <span className={`text-xs font-black mt-1 inline-block ${totalMonthEarnings >= targetBudget ? 'text-emerald-600' : 'text-blue-600'}`}>
-                  {totalMonthEarnings} {currency}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Left/Comparison Chart Column */}
-          <div className="lg:col-span-2 space-y-3">
-            <h4 className="text-xs font-black text-slate-500 flex items-center gap-1.5 justify-end">
-              مقارنة بيانية دقيقة للميزانية مع الأداء المالي لشهر {MONTHS.find(m => m.value === selectedMonth)?.name.split(' / ')[0]}
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-            </h4>
-            
-            <div className="h-64 w-full text-xs font-bold" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={[
-                    {
-                      name: 'المستهدف 🎯',
-                      المبلغ: targetBudget,
-                    },
-                    {
-                      name: 'المحقق الفعلي 💰',
-                      المبلغ: totalMonthEarnings,
-                    },
-                    {
-                      name: 'المدفوعات المستلمة 💵',
-                      المبلغ: totalMonthPayments,
-                    }
-                  ]}
-                  margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
-                  barSize={40}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="name" 
-                    tickLine={false} 
-                    axisLine={false} 
-                    tick={{ fill: '#475569', fontSize: 10, fontWeight: 'bold' }} 
-                  />
-                  <YAxis 
-                    tickLine={false} 
-                    axisLine={false} 
-                    tick={{ fill: '#64748b', fontSize: 10 }}
-                  />
-                  <Tooltip 
-                    formatter={(value: any) => [`${value} ${currency}`, 'القيمة']}
-                    contentStyle={{ borderRadius: '16px', border: '1px solid #f1f5f9', textAlign: 'right', direction: 'rtl', fontFamily: 'sans-serif', fontSize: '11px', fontWeight: 'bold' }}
-                    cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }}
-                  />
-                  <Bar dataKey="المبلغ" radius={[8, 8, 0, 0]}>
-                    <Cell fill="#818cf8" />
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#10b981" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Charts Dashboard with Recharts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart 1: Month-by-Month Evolution for Selected Year */}
-        <div className="lg:col-span-2 premium-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-650" />
-              تطور وتدفق الأرباح الشهرية مقابل المدفوعات لعام {selectedYear}
-            </h4>
-            <div className="flex items-center gap-2 text-[10px] text-slate-500 font-bold bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100 font-sans">
-              <TrendingUp size={12} className="text-blue-600" />
-              <span>مخطط الزمن التراكمي</span>
-            </div>
-          </div>
-
-          <div className="h-80 w-full text-xs font-bold" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={yearlyTrendData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="colorEarnings" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.01}/>
-                  </linearGradient>
-                  <linearGradient id="colorPayments" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.01}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tick={{ fill: '#64748b', fontSize: 10 }}
-                />
-                <YAxis 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tick={{ fill: '#64748b', fontSize: 10 }}
-                />
-                <Tooltip content={<CustomTooltipDynamic />} />
-                <Legend 
-                  verticalAlign="top" 
-                  height={36} 
-                  iconType="circle" 
-                  iconSize={8}
-                  wrapperStyle={{ fontSize: '11px', fontFamily: 'sans-serif' }}
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="الأرباح المستحقة" 
-                  stroke="#3b82f6" 
-                  strokeWidth={2.5}
-                  fillOpacity={1} 
-                  fill="url(#colorEarnings)" 
-                />
-                <Area 
-                  type="monotone" 
-                  dataKey="المدفوعات المستلمة" 
-                  stroke="#10b981" 
-                  strokeWidth={2.5}
-                  fillOpacity={1} 
-                  fill="url(#colorPayments)" 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Chart 2: Income Distribution Breakdown */}
-        <div className="premium-card p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
-              توزيع المدفوعات والديون لشهر {selectedMonth}
-            </h4>
-            <div className="flex items-center gap-2 text-[10px] text-slate-500 font-bold bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100 font-sans">
-              <PieIcon size={12} className="text-indigo-600" />
-              <span>هيكل المداخيل</span>
-            </div>
-          </div>
-
-          <div className="h-80 w-full flex flex-col justify-center items-center relative" dir="ltr">
-            <ResponsiveContainer width="100%" height={210}>
-              <PieChart>
-                <Pie
-                  data={paymentDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={65}
-                  outerRadius={85}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {paymentDistributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltipDynamic />} />
-              </PieChart>
-            </ResponsiveContainer>
-
-            {/* Custom Interactive Legend description with values in Arabic */}
-            <div className="w-full grid grid-cols-1 gap-2 text-right pt-2" dir="rtl">
-              {paymentDistributionData.map((entry, index) => (
-                <div key={index} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 font-bold text-slate-700">
-                    <span className="w-2.5 h-2.5 rounded-full block" style={{ backgroundColor: entry.color }} />
-                    <span className="text-[11px]">{entry.name}</span>
-                  </div>
-                  <span className="font-mono font-extrabold text-slate-800">
-                    {allZero ? 0 : entry.value} <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Table Breakdown of Student Profits */}
-      <div className="premium-card p-6">
-        <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <Users size={18} className="text-blue-600" />
-          كشف تفصيلي بأرباح وحصص ومطالبات الطلاب في شهر {selectedMonth}/{selectedYear}
-        </h3>
-
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full text-right text-xs min-w-[750px]">
-            <thead className="bg-slate-50 text-slate-605 font-bold border-b border-slate-100">
-              <tr>
-                <th className="py-3 px-4">اسم الطالب</th>
-                <th className="py-3 px-4">نظام التعلم</th>
-                <th className="py-3 px-4 text-center">حصص هذا الشهر</th>
-                <th className="py-3 px-4">ربحية المدرس المستحقة</th>
-                <th className="py-3 px-4">المدفوعات بالشهر</th>
-                <th className="py-3 px-4">إجمالي المتأخرات المتراكمة</th>
-                <th className="py-3 px-4 text-center">حالة الحساب للشهر</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-              {reportItems.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-450 italic">
-                    لا يوجد طلاب لإنشاء تقاريرهم. يرجى المتابعة والتسجيل أولاً.
-                  </td>
-                </tr>
-              ) : (
-                reportItems.map((item) => {
-                  const isSettled = item.totalPaid >= item.totalEarnings;
-
-                  return (
-                    <tr key={item.studentId} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-800">{item.studentName}</td>
-                      <td className="py-3.5 px-4">
-                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
-                          item.studentType === 'lesson' 
-                            ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' 
-                            : 'bg-pink-50 text-pink-700 border border-pink-100'
-                        }`}>
-                          {item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">{item.sessionsCount} حصة</td>
-                      <td className="py-3.5 px-4 font-extrabold text-slate-850">
-                        {item.totalEarnings} {currency}
-                      </td>
-                      <td className="py-3.5 px-4 font-extrabold text-emerald-600">
-                        {item.totalPaid > 0 ? `+${item.totalPaid}` : 0} {currency}
-                      </td>
-                      <td className="py-3.5 px-4 font-extrabold text-slate-500">
-                        <span className={item.overallOutstanding > 0 ? 'text-red-600 font-extrabold' : 'text-emerald-600 font-extrabold'}>
-                          {item.overallOutstanding}
-                        </span>{' '}
-                        <span className="text-[10px] text-slate-400 font-normal">{currency}</span>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        {item.totalPaid === 0 && item.totalEarnings === 0 ? (
-                          <span className="text-[10px] text-slate-400 font-semibold">لا يوجد حركات</span>
-                        ) : isSettled ? (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded-full inline-flex items-center gap-1">
-                            <CheckCircle2 size={10} /> مسدد للشهر
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-red-50 text-red-700 border border-red-150 rounded-full inline-flex items-center gap-1">
-                            <AlertCircle size={10} /> متبقي عليه
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Offscreen PDF Monthly Comprehensive Report Template used to generate high-DPI PDF directly (المحمل المباشر) */}
-      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '850px', height: 'auto', opacity: 1, visibility: 'visible', zIndex: -100 }}>
-        <div id="comprehensive-monthly-report-pdf" className="bg-white p-10 font-sans text-right relative text-slate-850" dir="rtl" style={{ width: '850px' }}>
+      {/* VIEW 1: FINANCIAL REPORTS */}
+      {activeTab === 'reports' && (
+        <div className="space-y-6">
           
-          {/* Header */}
-          <div className="border-b-4 border-blue-600 pb-5 mb-8 flex justify-between items-end">
-            <div>
-              <h1 className="text-2xl font-black text-blue-950 tracking-tight">تقرير الأداء الأكاديمي والمالي الشامل</h1>
-              <p className="text-xs text-slate-500 mt-1.5 font-bold">
-                عن شهر: <span className="text-blue-700 font-extrabold">{MONTHS.find(m => m.value === selectedMonth)?.name || `شهر ${selectedMonth}`}</span> لعام <span className="text-blue-700 font-extrabold">{selectedYear}</span>
-              </p>
-              <p className="text-[10px] text-slate-400 mt-0.5">تاريخ الاستخراج: {new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          {/* Period Selection Controls */}
+          <div className="bg-slate-50 border border-slate-200/55 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs font-black text-slate-700">تصفية التقرير المالي بالتاريخ:</span>
+            <div className="flex flex-row items-center justify-center p-1 bg-white border border-slate-200 rounded-2xl gap-0.5 md:gap-1 flex-nowrap overflow-x-auto">
+              {[
+                { id: 'all', label: 'الإجمالي (الكل)' },
+                { id: 'annual', label: 'سنوي' },
+                { id: 'monthly', label: 'شهري' },
+                { id: 'weekly', label: 'أسبوعي' },
+                { id: 'daily', label: 'يوم' }
+              ].map(period => (
+                <button
+                  key={period.id}
+                  onClick={() => setActivePeriod(period.id as any)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition cursor-pointer whitespace-nowrap active:scale-95 duration-150 ${
+                    activePeriod === period.id
+                      ? 'bg-blue-600 text-white font-extrabold shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  {period.label}
+                </button>
+              ))}
             </div>
-            <div className="text-left">
-              <div className="text-blue-650 font-black text-lg tracking-wider">نظام الإدارة الدراسي الذكي</div>
-              <p className="text-[10px] text-slate-400 font-bold">منصة تنظيم المواعيد والمستحقات والتقارير</p>
-            </div>
-          </div>
 
-          {/* Quick Metrics / Stats Grid */}
-          <div className="grid grid-cols-4 gap-4 mb-8">
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-              <p className="text-[10px] text-slate-400 font-extrabold mb-1">الأرباح المستحقة من حصص الشهر</p>
-              <p className="text-lg font-black text-slate-800">{totalMonthEarnings} <span className="text-xs text-slate-500 font-normal">{currency}</span></p>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-              <p className="text-[10px] text-slate-400 font-extrabold mb-1">المدفوعات والمستحصلات الكلية</p>
-              <p className="text-lg font-black text-emerald-600">+{totalMonthPayments} <span className="text-xs text-emerald-700 font-normal">{currency}</span></p>
-            </div>
-            <div className="bg-slate-100/70 border border-red-250 rounded-2xl p-4 text-center">
-              <p className="text-[10px] text-red-500 font-extrabold mb-1">الذمم المالية المتأخرة للطلاب</p>
-              <p className="text-lg font-black text-red-650">{totalPendingDue} <span className="text-xs text-red-550 font-normal">{currency}</span></p>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center">
-              <p className="text-[10px] text-slate-400 font-extrabold mb-1">عدد الحصص والدروس المكتملة</p>
-              <p className="text-lg font-black text-blue-900">{activeSessionsThisMonth} <span className="text-xs text-blue-650 font-normal">حصة</span></p>
-            </div>
-          </div>
-
-          {/* Outstanding Debts Analysis Detail (الذمم المالية للطلاب) */}
-          <div className="mb-8">
-            <h3 className="text-xs font-black text-slate-800 mb-3 flex items-center gap-1.5 pb-2 border-b border-slate-150">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              كشف الذمم المالية المتأخرة والمطالبات المستحقة للطلاب
-            </h3>
-            
-            <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden min-w-[650px]">
-              <thead className="bg-slate-100 text-slate-605 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="py-2.5 px-3">اسم الطالب</th>
-                  <th className="py-2.5 px-3">نظام التعلم</th>
-                  <th className="py-2.5 px-3 text-center">حصص الشهر</th>
-                  <th className="py-2.5 px-3">مدفوعات الشهر</th>
-                  <th className="py-2.5 px-3 text-center">متبقي مستحقات متراكمة (ذمم)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {reportItems.filter(item => item.overallOutstanding > 0).length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-slate-400 italic bg-emerald-50/20 text-emerald-700 font-bold">
-                      🎉 تهانينا! لا توجد ذمم مالية متأخرة أو مطالبات مستحقة على أي طالب لهذا الشهر.
-                    </td>
-                  </tr>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Print 1-page PDF trigger */}
+              <button
+                onClick={handleExportPDF}
+                disabled={isGeneratingPDF}
+                className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 text-xs font-black px-4 py-2 rounded-xl transition cursor-pointer disabled:opacity-50 duration-200 shadow-3xs"
+              >
+                {isGeneratingPDF ? (
+                  <span className="animate-spin text-rose-600">🌀</span>
                 ) : (
-                  reportItems
-                    .filter(item => item.overallOutstanding > 0)
-                    .sort((a,b) => b.overallOutstanding - a.overallOutstanding)
-                    .map((item) => (
-                      <tr key={item.studentId} className="hover:bg-slate-55">
-                        <td className="py-2.5 px-3 font-bold text-slate-800">{item.studentName}</td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          {item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-bold text-slate-705">{item.sessionsCount} حصة</td>
-                        <td className="py-2.5 px-3 font-bold text-emerald-650">
-                          {item.totalPaid > 0 ? `${item.totalPaid} ${currency}` : '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center bg-red-50/40">
-                          <span className="font-extrabold text-red-650 bg-red-100 px-2 py-0.5 rounded-md">
-                            {item.overallOutstanding} {currency}
-                          </span>
+                  <FileText size={15} />
+                )}
+                <span>تصدير التقرير PDF (صفحة واحدة)</span>
+              </button>
+            </div>
+          </div>
+
+
+
+          {/* THREE CORE BOLD GLOWING METRICS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            
+            {/* 1. TOTAL INCOME (VIOLET) */}
+            <div className="bg-violet-50/55 border-2 border-violet-500 rounded-3xl p-6 shadow-xs relative overflow-hidden transition-all duration-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 w-2.5 h-full bg-violet-500" />
+              <p className="text-xs font-black text-violet-800 pr-1 select-none">إجمالي الدخل المتوقع</p>
+              <div className="mt-4 flex items-baseline justify-between pr-1">
+                <span className="text-4xl font-extrabold text-violet-700 tracking-tight leading-none">
+                  {totalIncome.toLocaleString()}
+                </span>
+                <span className="text-sm font-black text-violet-600 mr-1.5">{currency}</span>
+              </div>
+              <p className="text-[10px] text-violet-505 font-bold mt-2 pr-1">القيمة المحسوبة لمجموع الحصص والاشتراكات المستحقة لهذه الفترة.</p>
+            </div>
+
+            {/* 2. PAYMENTS RECEIVED (GREEN) */}
+            <div className="bg-emerald-50/55 border-2 border-emerald-500 rounded-3xl p-6 shadow-xs relative overflow-hidden transition-all duration-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 w-2.5 h-full bg-emerald-500" />
+              <p className="text-xs font-black text-emerald-800 pr-1 select-none">المدفوعات والمبالغ المحصلة</p>
+              <div className="mt-4 flex items-baseline justify-between pr-1">
+                <span className="text-4xl font-extrabold text-emerald-700 tracking-tight leading-none">
+                  {totalPayments.toLocaleString()}
+                </span>
+                <span className="text-sm font-black text-emerald-600 mr-1.5">{currency}</span>
+              </div>
+              <p className="text-[10px] text-emerald-505 font-bold mt-2 pr-1">السيولة النقدية الفعلية التي تم استلامها وتسجيلها.</p>
+            </div>
+
+            {/* 3. OUTSTANDING DUES (RED) */}
+            <div className="bg-rose-50/55 border-2 border-rose-500 rounded-3xl p-6 shadow-xs relative overflow-hidden transition-all duration-300 hover:shadow-md">
+              <div className="absolute top-0 right-0 w-2.5 h-full bg-rose-500" />
+              <p className="text-xs font-black text-rose-800 pr-1 select-none">المستحقات والذمم المعلقة</p>
+              <div className="mt-4 flex items-baseline justify-between pr-1">
+                <span className="text-4xl font-extrabold text-rose-700 tracking-tight leading-none">
+                  {totalOutstandingDues.toLocaleString()}
+                </span>
+                <span className="text-sm font-black text-rose-600 mr-1.5">{currency}</span>
+              </div>
+              <p className="text-[10px] text-rose-505 font-bold mt-2 pr-1">الأرصدة المتبقية والمستحقة على الطلبة في هذه الفترة.</p>
+            </div>
+
+          </div>
+
+          {/* TWO GRAPHICAL & BREAKDOWN MODULES */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Left side: Recharts graphical representation */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs lg:col-span-1 flex flex-col justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-800 mb-1 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block animate-pulse" />
+                  المقارنة البيانية للميزان المالي
+                </h3>
+                <p className="text-[10px] text-slate-400 mb-4 font-semibold">تحليل بصري سريع للتناسب بين المداخيل والمستحقات الفعلية.</p>
+              </div>
+
+              <div className="h-60 w-full text-xs font-bold" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+                    barSize={40}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis 
+                      dataKey="name" 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tick={{ fill: '#334155', fontSize: 9, fontWeight: 'bold' }} 
+                    />
+                    <YAxis 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tick={{ fill: '#64748b', fontSize: 9 }}
+                    />
+                    <Tooltip 
+                      formatter={(value: any) => [`${value} ${currency}`, 'القيمة']}
+                      contentStyle={{ borderRadius: '16px', border: '1px solid #f1f5f9', textAlign: 'right', direction: 'rtl', fontSize: '11px', fontFamily: 'sans-serif' }}
+                    />
+                    <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-center text-[10px] text-slate-500 font-semibold mt-4">
+                تظهر الإحصائيات لعدد <span className="text-orange-600 font-black">{totalSessionsCount}</span> حصة منجزة مسجلين للطلاب خلال هذه الفترة.
+              </div>
+            </div>
+
+            {/* Right side: Student-specific detailed breakdown table */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs lg:col-span-2">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block" />
+                  تفاصيل كشف التدخلات المالية للطلاب
+                </h3>
+                <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2.5 py-1 rounded-lg">
+                  عدد المقيدين: {students.length} طالب
+                </span>
+              </div>
+
+              <div className="overflow-x-auto select-none rounded-2xl border border-slate-100">
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-150">
+                    <tr>
+                      <th className="py-3 px-4">اسم الطالب</th>
+                      <th className="py-3 px-4 text-center">النظام</th>
+                      <th className="py-3 px-4 text-center">الحصص</th>
+                      <th className="py-3 px-4 text-blue-600 font-black">الدخل</th>
+                      <th className="py-3 px-4 text-emerald-600 font-black">المسدد</th>
+                      <th className="py-3 px-4 text-rose-600 font-black">متبقي مطلوب</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                    {reportBreakdown.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                          لا توجد بيانات متاحة حالياً لتصميم تقرير لهذه الفترة.
                         </td>
                       </tr>
-                    ))
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
-
-          {/* Academic Performance & Lesson Density Analysis */}
-          <div className="mb-10">
-            <h3 className="text-xs font-black text-slate-800 mb-3 flex items-center gap-1.5 pb-2 border-b border-slate-150">
-              <span className="w-2 h-2 rounded-full bg-blue-500" />
-              إحصائيات أداء وحضور الطلاب (نشاط الحصص والدروس)
-            </h3>
-
-            <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full text-right text-xs border border-slate-200 rounded-xl overflow-hidden min-w-[650px]">
-              <thead className="bg-slate-100 text-slate-605 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="py-2.5 px-3">اسم الطالب</th>
-                  <th className="py-2.5 px-3">نظام التعلم</th>
-                  <th className="py-2.5 px-3 text-center">عدد حصص الشهر المنقضية</th>
-                  <th className="py-2.5 px-3">الأرباح المستحقة لشهر العمل</th>
-                  <th className="py-2.5 px-3 text-center">أعلى نشاط هذا الشهر</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {reportItems.map((item) => {
-                  const isTopActive = item.sessionsCount >= 4;
-                  return (
-                    <tr key={item.studentId} className="hover:bg-slate-55">
-                      <td className="py-2.5 px-3 font-bold text-slate-800">{item.studentName}</td>
-                      <td className="py-2.5 px-3 text-slate-500">
-                        {item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس'}
-                      </td>
-                      <td className="py-2.5 px-3 text-center font-extrabold text-slate-705">{item.sessionsCount} حصة</td>
-                      <td className="py-2.5 px-3 font-bold text-slate-600">{item.totalEarnings} {currency}</td>
-                      <td className="py-2.5 px-3 text-center">
-                        {isTopActive ? (
-                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-indigo-50 text-indigo-750 border border-indigo-150 rounded">
-                            🔥 نشاط متميز
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
-          </div>
-
-          {/* Report Footer / Signature Area */}
-          <div className="border-t border-slate-200 pt-6 mt-12 flex justify-between items-start text-xs text-slate-500">
-            <div>
-              <p className="font-bold">ملاحظات هامة:</p>
-              <p className="text-[10px] text-slate-400 mt-1 max-w-sm leading-relaxed">
-                * تم إعداد واحتساب هذا التقرير تلقائياً استناداً للبيانات المدخلة في نظام الإدارة التعليمي المالي للطلاب. يرجى مراجعة وتوثيق كافة المدفوعات المستلمة والمستحقة.
-              </p>
-            </div>
-            <div className="text-left">
-              <p className="font-bold">توقيع المعلم واعتماده:</p>
-              <div className="w-32 h-14 border border-dashed border-slate-300 rounded-xl mt-1.5 flex items-center justify-center text-slate-300 italic text-[10px]">
-                توقيع معتمد
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      {showPrintWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div 
-            onClick={() => setShowPrintWarning(false)}
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-          />
-          <div className="relative w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl z-10 font-sans text-right text-slate-800 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex gap-3.5 items-start mb-4">
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 bg-blue-50 border border-blue-100 text-blue-600">
-                <AlertTriangle size={22} />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-base font-bold text-slate-900 leading-snug">تنبيه بخصوص طباعة التقرير / PDF</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed whitespace-pre-line">
-                  أنت تتصفح التطبيق حالياً من داخل نافذة المعاينة السريعة والمحمية (iFrame)، والتي تمنع متصفحات الويب تشغيل أوامر الطباعة المباشرة بداخلها لأسباب أمنية.
-
-للطباعة وحفظ التقرير كـ PDF بنجاح وسهولة:
-1. يرجى فتح التطبيق في علامة تبويب كاملة ومستقلة بالمتصفح بالضغط على زر فتح الرابط الخارجي (الأيقونة أو السهم بأعلى نافذة المعاينة).
-2. ثم اضغط على زر طباعة من هناك لتظهر نافذة حفظ الـ PDF فوراً.
-                </p>
+                    ) : (
+                      reportBreakdown.map((item) => (
+                        <tr key={item.studentId} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3 px-4 font-bold text-slate-900">{item.studentName}</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
+                              item.studentType === 'lesson'
+                                ? 'bg-indigo-50 text-indigo-700'
+                                : 'bg-pink-50 text-pink-700'
+                            }`}>
+                              {item.studentType === 'lesson' ? 'حصص فردية' : 'اشتراك كورس'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono font-bold">{item.sessionsCount}</td>
+                          <td className="py-3 px-4 text-blue-600 font-black font-mono">{item.income} {currency}</td>
+                          <td className="py-3 px-4 text-emerald-600 font-black font-mono">{item.paid} {currency}</td>
+                          <td className="py-3 px-4 font-bold font-mono">
+                            {item.dues > 0 ? (
+                              <span className="text-rose-600">
+                                {item.dues} {currency}
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600">مسدد بالكامل</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2.5 font-bold text-xs pt-2">
-              <button
-                type="button"
-                onClick={() => setShowPrintWarning(false)}
-                className="px-4 py-2 text-slate-650 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer shadow-sm"
-              >
-                إلغاء
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  try {
-                    window.print();
-                  } catch(e) {}
-                  setShowPrintWarning(false);
-                }}
-                className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer"
-              >
-                تفهمت، جرب الطباعة على أي حال
-              </button>
-            </div>
           </div>
         </div>
       )}
 
-      {/* Detailed Print Report Modal for Teacher and Student Dues */}
-      <AnimatePresence>
-        {isDetailedReportModalOpen && (
-          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 overflow-y-auto bg-slate-900/60 backdrop-blur-md">
-            <style dangerouslySetInnerHTML={{ __html: `
-              @media print {
-                body * {
-                  visibility: hidden !important;
-                }
-                #financial-detailed-report-printable-area, #financial-detailed-report-printable-area * {
-                  visibility: visible !important;
-                }
-                #financial-detailed-report-printable-area {
-                  position: absolute !important;
-                  top: 0 !important;
-                  left: 0 !important;
-                  width: 100% !important;
-                  background: white !important;
-                  color: black !important;
-                  z-index: 9999999 !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                  padding: 24px !important;
-                  margin: 0 !important;
-                }
-                .print-hidden-btn {
-                  display: none !important;
-                }
-                * {
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
-                }
-              }
-            `}} />
+      {/* VIEW 2: BUDGET MANAGEMENT ("الميزانية") */}
+      {activeTab === 'budget' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Main budgeting console (Balance and actions) */}
+          <div className="lg:col-span-7 space-y-6">
             
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-4xl bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl z-10 font-sans text-right text-slate-800 max-h-[90vh] overflow-y-auto"
-            >
-              {/* Header inside modal */}
-              <div className="flex justify-between items-center pb-4 border-b border-slate-100 mb-6 print-hidden-btn">
-                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                  <FileText className="text-indigo-600" size={20} />
-                  معاينة تقرير المستحقات التفصيلي الجاهز للطباعة
-                </h3>
+            {/* Direct success or informational notifications */}
+            {successFeedback && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold p-4 rounded-2xl text-right animate-bounce flex items-center justify-between gap-2">
+                <span>{successFeedback}</span>
+                <span className="text-emerald-600 font-extrabold">✓</span>
+              </div>
+            )}
+
+            {/* CARD 1: تحديد مبلغ الميزانية */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs text-right space-y-4">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 justify-start">
+                <Wallet size={18} className="text-blue-600" />
+                <span>تحديد وتعيين مبلغ الميزانية الحالي 🛠️</span>
+              </h3>
+              <p className="text-[11px] text-slate-500">قم بإدخال وتثبيت القيمة الكلية لميزانيتك وسيقوم النظام بتثبيت الرصيد الجديد مباشرة.</p>
+              
+              <form onSubmit={handleSetExactBudget} className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.5"
+                  placeholder="مثال: 5000"
+                  value={setAmountInput}
+                  onChange={(e) => setSetAmountInput(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold flex-1 text-right"
+                />
                 <button
-                  type="button"
-                  onClick={() => setIsDetailedReportModalOpen(false)}
-                  className="p-1.5 hover:bg-slate-105 rounded-full transition text-slate-400 hover:text-slate-600 cursor-pointer"
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl transition cursor-pointer active:scale-95 duration-100 whitespace-nowrap"
                 >
-                  <X size={18} />
+                  تعيين وتحديث الرصيد
                 </button>
+              </form>
+            </div>
+
+            {/* CARD 2: تسجيل مدفوعات الحصص للطلاب */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs text-right space-y-4">
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 justify-start">
+                <Plus size={18} className="text-emerald-600" />
+                <span>تسجيل دفعة مالية لحصة الطالب 🧑‍🎓💰</span>
+              </h3>
+              <p className="text-[11px] text-slate-500">اختر الطالب وسجل المبلغ المدفوع ليتم قيد الدفع في حساب الطالب ومزامنة الإيراد فوريا مع رصيد الميزانية.</p>
+              
+              <form onSubmit={handleRegisterLessonPayment} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  
+                  {/* Select Student */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">اختر الطالب المقيد:</label>
+                    <select
+                      required
+                      value={selectedStudentId}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right"
+                    >
+                      <option value="">-- اختر طالباً من القائمة --</option>
+                      {students.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.name} ({student.type === 'lesson' ? 'حصص' : 'كورسات'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Payment Amount */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">القيمة المسددة ({currency}):</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      step="0.5"
+                      placeholder="أدخل قيمة الدفعة"
+                      value={lessonAmount}
+                      onChange={(e) => setLessonAmount(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-bold text-right"
+                    />
+                  </div>
+
+                  {/* Date Pick */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">تاريخ السداد:</label>
+                    <input
+                      type="date"
+                      required
+                      value={lessonPaymentDate}
+                      onChange={(e) => setLessonPaymentDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right font-mono"
+                    />
+                  </div>
+
+                  {/* Optional Notes */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">ملاحظة أو بيان (اختياري):</label>
+                    <input
+                      type="text"
+                      placeholder="مثال: سداد نقدي للمجموعة الجديدة"
+                      value={lessonNotes}
+                      onChange={(e) => setLessonNotes(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right"
+                    />
+                  </div>
+
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-6 py-2.5 rounded-xl transition cursor-pointer active:scale-95 duration-100"
+                  >
+                    تنفيذ الخدمة وتسجيل عملية الدفع الحصصية
+                  </button>
+                </div>
+              </form>
+            </div>
+
+          </div>
+
+          {/* Right side: Display Balance & Ledger synced results */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            {/* Displaying visual balances */}
+            <div className="bg-slate-900 text-white rounded-3xl p-6 text-center shadow-md relative overflow-hidden">
+              <div className="absolute top-0 right-0 left-0 bottom-0 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.15),transparent)] pointer-events-none" />
+              <p className="text-xs text-slate-400 font-bold tracking-widest uppercase">رصيد الميزانية الحالي</p>
+              <div className="mt-3 flex items-center justify-center gap-1.5">
+                <span className="text-4xl font-extrabold tracking-tight font-sans text-emerald-400">
+                  {budgetBalance.toLocaleString()}
+                </span>
+                <span className="text-sm font-bold text-slate-300">{currency}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-2">رصيد مالي تشغيلي موثق لحصص الطلاب المسددة وتحويلات التمويل.</p>
+            </div>
+
+            {/* Mini Log of Registered Student Lesson Payments */}
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs flex flex-col h-[340px]">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3 select-none">
+                <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 leading-none">
+                  <CheckCircle size={15} className="text-emerald-500" />
+                  مدفوعات الطلاب المسجلة في الميزانية
+                </h3>
               </div>
 
-              {/* Top Controls Bar */}
-              <div className="flex flex-wrap gap-2.5 justify-end mb-6 print-hidden-btn">
+              <div className="flex-1 overflow-y-auto scrollbar-thin space-y-2 pr-0.5">
+                {(() => {
+                  const studentLogs = ledger.filter(e => e.category === 'إيراد من طالب' || e.note.includes('دفعة'));
+                  if (studentLogs.length === 0) {
+                    return (
+                      <div className="h-full flex flex-col justify-center items-center text-center text-slate-400 p-4">
+                        <span className="text-2xl mb-1">🎓</span>
+                        <p className="text-[11px] font-bold text-slate-600">لا توجد دفعات حصص مسجلة</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">عند تسجيل مدفوعات الحصص ستظهر هنا التاريخ والاسم والقيمة.</p>
+                      </div>
+                    );
+                  }
+                  return studentLogs.map((entry) => (
+                    <div 
+                      key={entry.id} 
+                      className="bg-slate-50 hover:bg-slate-100/70 p-2.5 rounded-xl border border-slate-100 transition-colors flex items-center justify-between gap-2"
+                    >
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-slate-800 leading-tight">{entry.note}</p>
+                        <p className="text-[9px] text-slate-400 font-mono mt-0.5">{entry.date}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-extrabold text-emerald-600 font-mono">
+                          +{entry.amount}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteLedgerEntry(entry.id)}
+                          className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title="تراجع عن القيد"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* VIEW 3: EXPENSES MANAGEMENT ("المصروفات") */}
+      {activeTab === 'expenses' && (
+        <div className="max-w-2xl mx-auto space-y-6">
+
+          {/* Form exactly as requested */}
+          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+            
+            <h3 className="text-sm font-black text-slate-800 text-right">تسجيل وإثبات حركة مالية مخصصة 🌿💸</h3>
+            
+            <div className="space-y-4 text-right">
+              
+              {/* Box to write the amount */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-slate-600">مربع كتابة القيمة المالية (المبلغ):</label>
+                <input
+                  type="number"
+                  required
+                  min="0.1"
+                  step="0.5"
+                  placeholder="0.00"
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-black text-right"
+                />
+              </div>
+
+              {/* Note input box (optional) */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-slate-600">مربع كتابة ملاحظة حول العملية (اختياري):</label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  placeholder="مثال: شراء أوراق وأقلام للمجموعات، دعم خارجي، إلخ"
+                  value={customNote}
+                  onChange={(e) => setCustomNote(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right"
+                />
+              </div>
+
+              {/* Two buttons side-by-side: Green for Revenue, Red for Expense */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                
+                {/* Green Button for Revenue / إيراد */}
                 <button
                   type="button"
                   onClick={() => {
-                    try {
-                      window.print();
-                    } catch(e) {}
+                    const parsed = parseFloat(customAmount);
+                    if (isNaN(parsed) || parsed <= 0) return;
+                    const change = parsed;
+                    const newBalance = budgetBalance + change;
+                    const newEntry: BudgetLedgerEntry = {
+                      id: 'manual_rev_' + Date.now(),
+                      amount: change,
+                      date: new Date().toISOString().split('T')[0],
+                      note: customNote.trim() || 'إيراد يدوي مسجل',
+                      category: 'إيرادات عامة'
+                    };
+                    saveBudget(newBalance, [newEntry, ...ledger]);
+                    setCustomAmount('');
+                    setCustomNote('');
+                    setSuccessFeedback(`تم بنجاح تسجيل إيراد جديد بقيمة +${parsed} ${currency}`);
+                    setTimeout(() => setSuccessFeedback(''), 5000);
                   }}
-                  className="flex items-center gap-1.5 px-4.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-md shadow-indigo-600/15 transition-all duration-200"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5"
                 >
-                  <Printer size={15} />
-                  <span>طباعة الكشف الفورية (أو الحفظ كـ PDF)</span>
+                  <Plus size={14} />
+                  <span>إيراد مالي (+)</span>
                 </button>
+
+                {/* Red Button for Expense / مصروف */}
                 <button
                   type="button"
-                  onClick={handleExportDetailedPDF}
-                  disabled={isGeneratingPDF}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-50 border border-rose-150 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-xl cursor-pointer shadow-sm disabled:opacity-50 transition-all duration-200"
+                  onClick={() => {
+                    const parsed = parseFloat(customAmount);
+                    if (isNaN(parsed) || parsed <= 0) return;
+                    const change = -parsed;
+                    const newBalance = budgetBalance + change;
+                    const newEntry: BudgetLedgerEntry = {
+                      id: 'manual_exp_' + Date.now(),
+                      amount: change,
+                      date: new Date().toISOString().split('T')[0],
+                      note: customNote.trim() || 'مصروف يدوي مسجل',
+                      category: 'مصروفات عامة'
+                    };
+                    saveBudget(newBalance, [newEntry, ...ledger]);
+                    setCustomAmount('');
+                    setCustomNote('');
+                    setSuccessFeedback(`تم بنجاح تسجيل مصروف جديد بقيمة -${parsed} ${currency}`);
+                    setTimeout(() => setSuccessFeedback(''), 5000);
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5"
                 >
-                  {isGeneratingPDF ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                  <span>{isGeneratingPDF ? 'جاري التحرير...' : 'تنزيل التقرير تلقائياً'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDetailedReportModalOpen(false)}
-                  className="px-4 py-2.5 text-slate-600 hover:text-slate-800 bg-slate-100/80 hover:bg-slate-200 rounded-xl cursor-pointer text-xs font-bold transition-all duration-200"
-                >
-                  إغلاق المعاينة
+                  <Minus size={14} />
+                  <span>مصروف مالي (-)</span>
                 </button>
               </div>
 
-              {/* Printable Document Sheet Container */}
-              <div 
-                id="financial-detailed-report-printable-area" 
-                className="bg-white p-8 border border-slate-200 rounded-2xl font-sans text-right relative text-slate-850"
-                dir="rtl"
-              >
-                {/* Document Brand Banner / Header */}
-                <div className="border-b-4 border-indigo-600 pb-5 mb-6 flex justify-between items-end">
-                  <div>
-                    <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black px-2 py-0.5 rounded-lg inline-block mb-1.5">كشف مالي معتمد للدروس والمستحقات</span>
-                    <h1 className="text-xl font-black text-slate-900 tracking-tight">كشف المستحقات الطلابية وحسابات الذمم للطلبة والمعلم</h1>
-                    <p className="text-xs text-slate-500 mt-1 font-bold">
-                      أرباح وحصص ومطالبات شهر: <span className="text-indigo-700 font-extrabold">{MONTHS.find(m => m.value === selectedMonth)?.name || `شهر ${selectedMonth}`}</span> لعام <span className="text-indigo-700 font-extrabold">{selectedYear}</span>
-                    </p>
-                    <p className="text-[9px] text-slate-400 mt-0.5">تاريخ الاستخراج: {new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</p>
-                  </div>
-                  <div className="text-left font-sans">
-                    <div className="text-indigo-600 font-black text-base tracking-wider">الأستاذ Mohamed Abdella ( Abo Silem )</div>
-                    <p className="text-[10px] text-slate-400 font-bold mt-0.5">منصة تفوق الطلاب ومتابعة الشؤون الذكية</p>
-                  </div>
-                </div>
+            </div>
 
-                {/* Summary Grid */}
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
-                    <p className="text-[10px] text-slate-500 font-extrabold mb-1">صافي أرباح الشهر المستحقة</p>
-                    <p className="text-base font-black text-slate-800">{totalMonthEarnings} <span className="text-xs text-slate-500 font-normal">{currency}</span></p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-center">
-                    <p className="text-[10px] text-slate-500 font-extrabold mb-1">إجمالي الدفعات والمحصل الفعلي</p>
-                    <p className="text-base font-black text-emerald-600">+{totalMonthPayments} <span className="text-xs text-emerald-700 font-normal">{currency}</span></p>
-                  </div>
-                  <div className="bg-red-50/50 border border-red-100 rounded-xl p-3 text-center">
-                    <p className="text-[10px] text-red-600 font-extrabold mb-1">الذمم والديون المتبقية للطلبة</p>
-                    <p className="text-base font-black text-red-650">{totalPendingDue} <span className="text-xs text-red-500 font-normal">{currency}</span></p>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center">
-                    <p className="text-[10px] text-indigo-700 font-extrabold mb-1">نسبة إنجاز مستهدف الميزانية</p>
-                    <p className="text-base font-black text-indigo-850">
-                      {targetBudget > 0 ? Math.round((totalMonthEarnings / targetBudget) * 100) : 100}%
-                    </p>
-                  </div>
-                </div>
+            {successFeedback && (
+              <p className="text-[11px] text-center font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded-lg mt-3">
+                {successFeedback}
+              </p>
+            )}
 
-                {/* SECTION 1: MASTER TEACHER RECEIVABLES REPORT */}
-                <div className="mb-6">
-                  <h3 className="text-xs font-black text-slate-800 mb-2.5 pb-1.5 border-b border-indigo-100 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block" />
-                    أولاً: مستحقات المعلم وأرباح عمل الحصص والدروس لشهر التصفية ({selectedMonth}/{selectedYear})
-                  </h3>
-                  <div className="overflow-x-auto scrollbar-thin">
-                    <table className="w-full text-right text-[11px] border border-slate-200 rounded-xl overflow-hidden min-w-[750px]">
-                    <thead className="bg-slate-100 text-slate-650 font-bold border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">اسم الطالب</th>
-                        <th className="py-2.5 px-3">نظام التعليم المالي</th>
-                        <th className="py-2.5 px-3 text-center">الحصص المنجزة هذا الشهر</th>
-                        <th className="py-2.5 px-3">تسعيرة الدرس/الكورس</th>
-                        <th className="py-2.5 px-3 font-extrabold text-indigo-950">الأرباح المستحقة للمعلم</th>
-                        <th className="py-2.5 px-3">المسدد والمدفوع بالشهر</th>
-                        <th className="py-2.5 px-3 text-center">حالة تسوية رصيد الشهر</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 text-slate-700">
-                      {reportItems.map((item) => {
-                        const sData = students.find(s => s.id === item.studentId);
-                        const customRateLabel = item.studentType === 'lesson' 
-                          ? `${sData?.lessonRate || 0} ${currency}` 
-                          : `${sData?.coursePrice || 0} ${currency}`;
-                        const monthBalance = item.totalEarnings - item.totalPaid;
-                        return (
-                          <tr key={item.studentId} className="hover:bg-slate-50/50">
-                            <td className="py-2 px-3 font-bold text-slate-905">{item.studentName}</td>
-                            <td className="py-2 px-3">
-                              <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${item.studentType === 'lesson' ? 'bg-indigo-50 text-indigo-700' : 'bg-pink-50 text-pink-700'}`}>
-                                {item.studentType === 'lesson' ? 'نظام حصص' : 'نظام كورس'}
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-center font-bold text-slate-650">{item.sessionsCount} حصة منقضية</td>
-                            <td className="py-2 px-3 font-semibold text-slate-500">{customRateLabel}</td>
-                            <td className="py-2 px-3 font-extrabold text-slate-850 bg-slate-50/40">{item.totalEarnings} {currency}</td>
-                            <td className="py-2 px-3 font-bold text-emerald-650">+{item.totalPaid} {currency}</td>
-                            <td className="py-2 px-3 text-center font-bold">
-                              {monthBalance <= 0 ? (
-                                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-150 inline-block">مسدد كامل رصيده 🥇</span>
-                              ) : (
-                                <span className="text-[10px] font-extrabold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-150 inline-block">متبقي بذمته {monthBalance} {currency}</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {/* Sums row */}
-                      <tr className="bg-indigo-50/30 font-black text-slate-900 border-t-2 border-indigo-150">
-                        <td colSpan={2} className="py-2.5 px-3">ملخص أرباح الحصص المنجزة الإجمالي:</td>
-                        <td className="py-2.5 px-3 text-center font-black">{activeSessionsThisMonth} حصة مكملة</td>
-                        <td className="py-2.5 px-3">-</td>
-                        <td className="py-2.5 px-3 text-slate-900 bg-indigo-100/35">{totalMonthEarnings} {currency}</td>
-                        <td className="py-2.5 px-3 text-emerald-650">+{totalMonthPayments} {currency}</td>
-                        <td className="py-2.5 px-3 text-center text-indigo-800">
-                          {Math.max(0, totalMonthEarnings - totalMonthPayments)} {currency} (الرصيد المعلق للشهر)
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-
-                {/* SECTION 2: STUDENT OUTSTANDING BALANCES REPORT */}
-                <div className="mb-6">
-                  <h3 className="text-xs font-black text-slate-800 mb-2.5 pb-1.5 border-b border-red-100 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
-                    ثانياً: الديون المترتبة ومطالبات الطلاب المتراكمة حتى الآن (المتأخرات الكلية المتبقية)
-                  </h3>
-                  <div className="overflow-x-auto scrollbar-thin">
-                    <table className="w-full text-right text-[11px] border border-slate-200 rounded-xl overflow-hidden min-w-[750px]">
-                    <thead className="bg-slate-100 text-slate-650 font-bold border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">اسم الطالب</th>
-                        <th className="py-2.5 px-3">النظام الدراسي المفصل</th>
-                        <th className="py-2.5 px-3 text-center">إجمالي قيمة الحصص والبرامج المسجلة</th>
-                        <th className="py-2.5 px-3">إجمالي كافة المبالغ المسددة كلياً</th>
-                        <th className="py-2.5 px-3 text-center text-red-800 bg-red-100/10">متبقي الذمة المستحقة (متأخرات كلية مستهدفة)</th>
-                        <th className="py-2.5 px-3 text-center">موعد الاستحقاق المالي القادم</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 text-slate-700">
-                      {reportItems.map((item) => {
-                        const sData = students.find(s => s.id === item.studentId);
-                        let totalAcademicCharge = 0;
-                        const allPaymentsPaid = sData?.payments.reduce((sum, p) => sum + p.amount, 0) || 0;
-                        
-                        if (sData?.type === 'lesson') {
-                          totalAcademicCharge = (sData?.sessions.length || 0) * (sData?.lessonRate || 0);
-                        } else {
-                          const totalExtraCost = sData?.sessions.filter(s => s.isExtra).reduce((sum, s) => sum + (s.extraPrice || 0), 0) || 0;
-                          totalAcademicCharge = (sData?.coursePrice || 0) + totalExtraCost;
-                        }
-
-                        return (
-                          <tr key={item.studentId} className="hover:bg-slate-55">
-                            <td className="py-2 px-3 font-semibold text-slate-900">{item.studentName}</td>
-                            <td className="py-2 px-3 text-slate-500">
-                              {item.studentType === 'lesson' ? 'نظام حصص يومية' : 'نظام كورس كامل مبرم'}
-                            </td>
-                            <td className="py-2 px-3 text-center font-semibold text-slate-600">{totalAcademicCharge} {currency}</td>
-                            <td className="py-2 px-3 font-semibold text-emerald-650">+{allPaymentsPaid} {currency}</td>
-                            <td className="py-2 px-3 text-center font-bold bg-red-50/30">
-                              {item.overallOutstanding > 0 ? (
-                                <span className="bg-red-100 text-red-800 px-2.2 py-0.5 rounded font-black border border-red-200">
-                                  {item.overallOutstanding} {currency}
-                                </span>
-                              ) : (
-                                <span className="text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-150 inline-block">حساب سليم 0 {currency}</span>
-                              )}
-                            </td>
-                            <td className="py-2 px-3 text-center font-mono text-slate-500 font-bold">
-                              {sData?.dueDate ? sData.dueDate : 'لا يوجد متأخرات'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {/* Summary Outstanding Totals */}
-                      <tr className="bg-red-50/15 font-black text-slate-900 border-t-2 border-red-200">
-                        <td colSpan={4} className="py-2.5 px-3 text-slate-800 font-black">إجمالي المطالبات المتراكمة والذمم المستحقة للتحصيل الفوري:</td>
-                        <td className="py-2.5 px-3 text-center text-red-650 text-sm font-black bg-red-100 border border-red-200/50">
-                          {totalPendingDue} {currency}
-                        </td>
-                        <td className="py-2.5 px-3">-</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  </div>
-                </div>
-
-                {/* Notes & Signs */}
-                <div className="border-t border-slate-200 pt-5 mt-7 flex justify-between items-start text-xs text-slate-500">
-                  <div>
-                    <h4 className="font-extrabold text-slate-800">توجيهات وملاحظات التسوية:</h4>
-                    <p className="text-[10px] text-slate-400 mt-1 max-w-lg leading-relaxed font-bold">
-                      * يرجى مطابقة هذا الكشف ومراجعته بدقة، والتحقق المستمر لضمان تطابق المدفوعات المستلمة والمقيدة لدعم تفوق الطلاب.
-                    </p>
-                  </div>
-                  <div className="text-left font-sans">
-                    <p className="font-extrabold text-slate-800">توقيع واعتماد الأستاذ:</p>
-                    <div className="text-left mt-2 flex flex-col items-end">
-                      <div className="w-36 h-12 border border-dashed border-slate-300 rounded-xl flex items-center justify-center text-slate-350 italic text-[9px]">
-                        معتمد بالتصريح المالي
-                      </div>
-                      <span className="text-[9.5px] text-slate-400 mt-1 font-mono">النسخة المعتمدة v1.3 • Mohamed Abdella</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+
+                {/* Simple transaction history to let user view what they entered */}
+                <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs text-right space-y-3 mt-6">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5 justify-start">
+                      <History size={14} className="text-slate-500" />
+                      <span>آخر التعاملات والمصروفات المسجلة حديثاً بالمحفظة</span>
+                    </h4>
+                  </div>
+                  
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto scrollbar-thin">
+                    {(() => {
+                      const expenseLogs = ledger.filter(e => e.category === 'مصروفات عامة' || e.category === 'إيرادات عامة' || e.id.startsWith('manual_'));
+                      if (expenseLogs.length === 0) {
+                        return (
+                          <p className="text-[10px] text-slate-400 text-center py-4">لا توجد عمليات مخصصة مسجلة بالمصروفات حتى الآن.</p>
+                        );
+                      }
+                      return expenseLogs.map((entry) => {
+                        const isPositive = entry.amount > 0;
+                        return (
+                          <div key={entry.id} className="bg-slate-50 p-2.5 rounded-xl flex items-center justify-between text-xs text-right border border-slate-100/50">
+                            <div className="text-right">
+                              <p className="font-bold text-slate-800">{entry.note}</p>
+                              <p className="text-[9px] text-slate-400 font-mono mt-0.5">{entry.date}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-black font-mono ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {isPositive ? '+' : ''}{entry.amount} {currency}
+                              </span>
+                              <button
+                                onClick={() => handleDeleteLedgerEntry(entry.id)}
+                                className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition cursor-pointer"
+                                title="حذف"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+      {/* ========================================== */}
+      {/* PERFECT SINGLE-VIEW MANDATORY A4 WRAPPER FOR PDF PRINTING */}
+      {/* ========================================== */}
+      <div className="absolute pointer-events-none select-none overflow-hidden" style={{ position: 'absolute', left: '-9999px', top: '0px', width: '800px', height: '1130px', opacity: 1, visibility: 'visible', zIndex: -999 }}>
+        <div 
+          ref={printableReportRef} 
+          className="bg-white p-10 font-sans text-right relative text-slate-900 border-t-8 border-blue-600 flex flex-col justify-between" 
+          dir="rtl" 
+          style={{ width: '800px', height: '1130px' }}
+        >
+          {/* A4 Content Wrapper */}
+          <div className="space-y-8">
+            
+            {/* Elegant Header */}
+            <div className="flex justify-between items-start border-b pb-6 border-slate-200">
+              <div className="space-y-1.5">
+                <span className="bg-blue-105 bg-blue-50 text-blue-700 text-[10px] font-black px-2.5 py-1 rounded-lg">مستند رسمي معتمد</span>
+                <h1 className="text-2xl font-black text-slate-900 leading-none">تقرير التدفقات المالية الشامل</h1>
+                <p className="text-xs text-slate-505 font-bold">{getPeriodArabicLabel()}</p>
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1 justify-end font-black text-blue-600 text-sm">
+                  <span>نظام الحصص الإلكتروني</span>
+                  <Coins size={16} />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 font-bold">تاريخ التصدير: {new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                <p className="text-[9px] text-slate-400 font-mono mt-0.5">ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+              </div>
+            </div>
+
+            {/* Period Statistics Summary Cards */}
+            <div>
+              <p className="text-xs font-black text-slate-500 mb-3 block">ملخص المؤشرات المالية الرئيسية:</p>
+              <div className="grid grid-cols-3 gap-4">
+                
+                {/* Income */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right">
+                  <span className="text-[10px] font-bold text-blue-600 block">إجمالي الدخل المتوقع</span>
+                  <span className="text-xl font-extrabold text-blue-600 block mt-1 tracking-tight">
+                    {totalIncome.toLocaleString()} <span className="text-[10px] font-bold">{currency}</span>
+                  </span>
+                </div>
+
+                {/* Paid */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right">
+                  <span className="text-[10px] font-bold text-emerald-600 block">المدفوعات والمبالغ المحصلة</span>
+                  <span className="text-xl font-extrabold text-emerald-600 block mt-1 tracking-tight">
+                    {totalPayments.toLocaleString()} <span className="text-[10px] font-bold">{currency}</span>
+                  </span>
+                </div>
+
+                {/* Dues */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-right">
+                  <span className="text-[10px] font-bold text-rose-600 block">المستحقات المعلقة</span>
+                  <span className="text-xl font-extrabold text-rose-600 block mt-1 tracking-tight">
+                    {totalOutstandingDues.toLocaleString()} <span className="text-[10px] font-bold">{currency}</span>
+                  </span>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Analysis Note */}
+            <div className="bg-blue-50/50 border border-blue-150 rounded-2xl p-4 text-right space-y-1">
+              <span className="text-xs font-black text-blue-800 block flex items-center gap-1.5 justify-end">
+                <span>توجيهات وتحليل الأداء العام للتقرير</span>
+                <CheckCircle size={14} className="text-blue-600" />
+              </span>
+              <p className="text-[10.5px] text-slate-600 leading-relaxed font-semibold">
+                عقد الطالب بمختلف الفترات يسير بنسبة تحصيل مالي تبلغ <span className="text-blue-700 font-extrabold">{totalIncome > 0 ? Math.round((totalPayments / totalIncome) * 100) : 100}%</span> من إجمالي الدخل الكلي المحدد. يرجى توجيه وإرسال تنبيهات السداد والمطالبات للطلاب الذين يندرج تحت حسابهم متبقي مستحقات لسرعة التحصيل وتغذية الميزانية العامة للمركز.
+              </p>
+            </div>
+
+            {/* Detailed Table for PDF - Designed with compact padding to fit exactly 1 page */}
+            <div>
+              <p className="text-xs font-black text-slate-500 mb-3 block">تفاصيل حسابات الطلبة المنجزة للفترة:</p>
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-right text-[10px]">
+                  <thead className="bg-slate-50 text-slate-600 font-extrabold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">اسم الطالب المقيد</th>
+                      <th className="py-2.5 px-3 text-center">النظام</th>
+                      <th className="py-2.5 px-3 text-center">عدد الحصص</th>
+                      <th className="py-2.5 px-3 text-blue-600">إجمالي المستحق</th>
+                      <th className="py-2.5 px-3 text-emerald-600">المسدد الفعلي</th>
+                      <th className="py-2.5 px-3 text-rose-600">المتبقي المطلوب</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                    {reportBreakdown.slice(0, 14).map((item) => ( // Show top 14 items to safely maintain A4 single sheet boundary
+                      <tr key={item.studentId + '_pdf'}>
+                        <td className="py-2 px-3 font-extrabold text-slate-900">{item.studentName}</td>
+                        <td className="py-2 px-3 text-center">
+                          {item.studentType === 'lesson' ? 'حصص فردية' : 'اشتراك كورس'}
+                        </td>
+                        <td className="py-2 px-3 text-center font-mono">{item.sessionsCount}</td>
+                        <td className="py-2 px-3 font-mono text-slate-800">{item.income} {currency}</td>
+                        <td className="py-2 px-3 font-mono text-slate-800">{item.paid} {currency}</td>
+                        <td className="py-2 px-3 font-mono text-slate-900">
+                          {item.dues > 0 ? `${item.dues} ${currency}` : 'مسدد بالكامل'}
+                        </td>
+                      </tr>
+                    ))}
+                    {reportBreakdown.length > 14 && (
+                      <tr>
+                        <td colSpan={6} className="py-2 px-3 text-center text-slate-455 font-bold italic bg-slate-50">
+                          * تم إظهار أول ١٤ طالب فقط لبيانات التوافق الحجمي للورقة الواحدة. يرحى استخدام شاشة العرض لرؤية القائمة الإجمالية.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Footer of A4 single page */}
+          <div className="border-t pt-5 border-slate-200 mt-6 flex justify-between items-end text-right">
+            <div>
+              <p className="text-[10px] text-slate-500 font-extrabold">توقيع المعلم المشرف:</p>
+              <div className="h-10 w-36 border-b border-dashed border-slate-300 mt-2" />
+            </div>
+            
+            <div className="text-left text-[9px] text-slate-400 font-black space-y-0.5">
+              <p>مستخرج إلكترونياً ولا يحتاج إلى ختم مادي</p>
+              <p>نظام الحصص الذكي لإدارة شؤون الطلاب والمجموعات</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   );
 }
