@@ -36,6 +36,8 @@ export interface WorkspaceData {
   passcode: string;
   primaryColor?: string;
   enableWhatsApp24hReminders?: boolean;
+  enableAutoCloudSync?: boolean;
+  teacherAvatar?: string;
   autoBackupDownloadInterval?: 'daily' | 'weekly' | 'monthly' | 'disabled';
   students: Student[];
   appointments: Appointment[];

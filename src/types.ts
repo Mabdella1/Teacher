@@ -105,6 +105,8 @@ export interface TeacherPreferences {
   lastGoogleDriveBackupDate?: string; // YYYY-MM-DD date when the last Google Drive backup took place
   hideAIAnalysis?: boolean; // toggle to hide Gemini AI feature from the UI
   hideGoogleCalendar?: boolean; // toggle to hide Google Calendar feature from the UI
+  enableAutoCloudSync?: boolean; // toggle for automated background database saving to cloud
+  teacherAvatar?: string; // custom teacher profile image (Base64 string or image URL)
 }
 
 export interface MonthlyReportItem {

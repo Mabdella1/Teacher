@@ -1302,11 +1302,11 @@ export default function StudentPortal({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {student.studyNotes.map((note) => {
                         const typeColorsMap: Record<string, { bg: string; text: string; label: string; icon: string }> = {
-                          academic: { bg: 'bg-indigo-50/75 border-indigo-150', text: 'text-indigo-805', label: 'التحصيل الأكاديمي 📚', icon: '🧠' },
-                          behavior: { bg: 'bg-emerald-50/75 border-emerald-150', text: 'text-emerald-805', label: 'التقييم السلوكي والأدبي 🌟', icon: '❤️' },
-                          homework: { bg: 'bg-sky-50/75 border-sky-150', text: 'text-sky-805', label: 'متابعة الواجبات المدرسية 📝', icon: '✏️' },
-                          exam: { bg: 'bg-amber-50/75 border-amber-150', text: 'text-amber-805', label: 'تقييم اختبار شهري 📊', icon: '📈' },
-                          general: { bg: 'bg-purple-50/75 border-purple-150', text: 'text-purple-805', label: 'ملاحظة عامة وتنسيق 📢', icon: '🏷️' },
+                          academic: { bg: 'bg-indigo-50/75 border-indigo-150', text: 'text-indigo-800', label: 'التحصيل الأكاديمي 📚', icon: '🧠' },
+                          behavior: { bg: 'bg-emerald-50/75 border-emerald-150', text: 'text-emerald-800', label: 'التقييم السلوكي والأدبي 🌟', icon: '❤️' },
+                          homework: { bg: 'bg-sky-50/75 border-sky-150', text: 'text-sky-800', label: 'متابعة الواجبات المدرسية 📝', icon: '✏️' },
+                          exam: { bg: 'bg-amber-50/75 border-amber-150', text: 'text-amber-800', label: 'تقييم اختبار شهري 📊', icon: '📈' },
+                          general: { bg: 'bg-purple-50/75 border-purple-150', text: 'text-purple-800', label: 'ملاحظة عامة وتنسيق 📢', icon: '🏷️' },
                         };
                         const styling = typeColorsMap[note.type] || typeColorsMap.general;
 

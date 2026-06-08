@@ -811,157 +811,364 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
 
       {/* VIEW 3: EXPENSES MANAGEMENT ("المصروفات") */}
       {activeTab === 'expenses' && (
-        <div className="max-w-2xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-6">
 
-          {/* Form exactly as requested */}
-          <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-4">
+          {/* THREE CORE METRICS FOR REVENUES, EXPENSES & BALANCE */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             
-            <h3 className="text-sm font-black text-slate-800 text-right">تسجيل وإثبات حركة مالية مخصصة 🌿💸</h3>
-            
-            <div className="space-y-4 text-right">
-              
-              {/* Box to write the amount */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-slate-600">مربع كتابة القيمة المالية (المبلغ):</label>
-                <input
-                  type="number"
-                  required
-                  min="0.1"
-                  step="0.5"
-                  placeholder="0.00"
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-black text-right"
-                />
+            {/* 1. REVENUES CARD */}
+            <div className="bg-emerald-50/40 border border-emerald-200 rounded-3xl p-6 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-2xs">
+              <div className="absolute top-0 right-0 w-2 h-full bg-emerald-500" />
+              <div className="flex items-center justify-between pb-1">
+                <p className="text-xs font-black text-emerald-800 pr-2 select-none">إجمالي الإيرادات الكلية</p>
+                <span className="p-1.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <ArrowUpRight size={15} />
+                </span>
               </div>
-
-              {/* Note input box (optional) */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-slate-600">مربع كتابة ملاحظة حول العملية (اختياري):</label>
-                <input
-                  type="text"
-                  maxLength={100}
-                  placeholder="مثال: شراء أوراق وأقلام للمجموعات، دعم خارجي، إلخ"
-                  value={customNote}
-                  onChange={(e) => setCustomNote(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right"
-                />
+              <div className="mt-2 flex items-baseline justify-between pr-2">
+                <span className="text-3xl font-extrabold text-emerald-700 tracking-tight leading-none font-sans">
+                  {computedRevenues.toLocaleString()}
+                </span>
+                <span className="text-xs font-black text-emerald-600 mr-1.5">{currency}</span>
               </div>
-
-              {/* Two buttons side-by-side: Green for Revenue, Red for Expense */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                
-                {/* Green Button for Revenue / إيراد */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const parsed = parseFloat(customAmount);
-                    if (isNaN(parsed) || parsed <= 0) return;
-                    const change = parsed;
-                    const newBalance = budgetBalance + change;
-                    const newEntry: BudgetLedgerEntry = {
-                      id: 'manual_rev_' + Date.now(),
-                      amount: change,
-                      date: new Date().toISOString().split('T')[0],
-                      note: customNote.trim() || 'إيراد يدوي مسجل',
-                      category: 'إيرادات عامة'
-                    };
-                    saveBudget(newBalance, [newEntry, ...ledger]);
-                    setCustomAmount('');
-                    setCustomNote('');
-                    setSuccessFeedback(`تم بنجاح تسجيل إيراد جديد بقيمة +${parsed} ${currency}`);
-                    setTimeout(() => setSuccessFeedback(''), 5000);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5"
-                >
-                  <Plus size={14} />
-                  <span>إيراد مالي (+)</span>
-                </button>
-
-                {/* Red Button for Expense / مصروف */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const parsed = parseFloat(customAmount);
-                    if (isNaN(parsed) || parsed <= 0) return;
-                    const change = -parsed;
-                    const newBalance = budgetBalance + change;
-                    const newEntry: BudgetLedgerEntry = {
-                      id: 'manual_exp_' + Date.now(),
-                      amount: change,
-                      date: new Date().toISOString().split('T')[0],
-                      note: customNote.trim() || 'مصروف يدوي مسجل',
-                      category: 'مصروفات عامة'
-                    };
-                    saveBudget(newBalance, [newEntry, ...ledger]);
-                    setCustomAmount('');
-                    setCustomNote('');
-                    setSuccessFeedback(`تم بنجاح تسجيل مصروف جديد بقيمة -${parsed} ${currency}`);
-                    setTimeout(() => setSuccessFeedback(''), 5000);
-                  }}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5"
-                >
-                  <Minus size={14} />
-                  <span>مصروف مالي (-)</span>
-                </button>
-              </div>
-
+              <p className="text-[10px] text-emerald-600/80 font-medium mt-2.5 pr-2">تشمل إيرادات الطلاب ودفعات حضور الحصص مع المداخيل المسجلة.</p>
             </div>
 
-            {successFeedback && (
-              <p className="text-[11px] text-center font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded-lg mt-3">
-                {successFeedback}
-              </p>
-            )}
+            {/* 2. EXPENSES CARD */}
+            <div className="bg-rose-50/40 border border-rose-200 rounded-3xl p-6 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-2xs">
+              <div className="absolute top-0 right-0 w-2 h-full bg-rose-500" />
+              <div className="flex items-center justify-between pb-1">
+                <p className="text-xs font-black text-rose-800 pr-2 select-none">إجمالي المصروفات العامة</p>
+                <span className="p-1.5 bg-rose-100 text-rose-700 rounded-xl">
+                  <ArrowDownRight size={15} />
+                </span>
+              </div>
+              <div className="mt-2 flex items-baseline justify-between pr-2">
+                <span className="text-3xl font-extrabold text-rose-700 tracking-tight leading-none font-sans">
+                  {computedExpenses.toLocaleString()}
+                </span>
+                <span className="text-xs font-black text-rose-600 mr-1.5">{currency}</span>
+              </div>
+              <p className="text-[10px] text-rose-600/80 font-medium mt-2.5 pr-2">تشمل المصاريف الإدارية والورقيات والخصومات الموثقة بالمحفظة.</p>
+            </div>
+
+            {/* 3. BALANCE CARD */}
+            {(() => {
+              const netBalance = computedRevenues - computedExpenses;
+              const isProfitable = netBalance >= 0;
+              return (
+                <div className={`rounded-3xl p-6 shadow-3xs relative overflow-hidden transition-all duration-300 hover:shadow-2xs border ${
+                  isProfitable 
+                    ? 'bg-blue-50/40 border-blue-200' 
+                    : 'bg-amber-50/45 border-amber-200'
+                }`}>
+                  <div className={`absolute top-0 right-0 w-2 h-full ${isProfitable ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                  <div className="flex items-center justify-between pb-1">
+                    <p className={`text-xs font-black pr-2 select-none ${isProfitable ? 'text-blue-800' : 'text-amber-800'}`}>صافي موازنة التوازن المالي</p>
+                    <span className={`p-1.5 rounded-xl ${isProfitable ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                      <Wallet size={15} />
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between pr-2">
+                    <span className={`text-3xl font-extrabold tracking-tight leading-none font-sans ${isProfitable ? 'text-blue-700' : 'text-amber-700'}`}>
+                      {netBalance.toLocaleString()}
+                    </span>
+                    <span className={`text-xs font-black mr-1.5 ${isProfitable ? 'text-blue-600' : 'text-amber-600'}`}>{currency}</span>
+                  </div>
+                  <p className={`text-[10px] font-medium mt-2.5 pr-2 ${isProfitable ? 'text-blue-600/80' : 'text-amber-700/80'}`}>
+                    {isProfitable 
+                      ? 'مؤشر ممتاز: تغطية مالية كاملة والأرباح تزيد لتغذية الميزانية.' 
+                      : 'مؤشر عجز مؤقت: إجمالي المصروفات تخطى الأرباح المسجلة للفترة.'}
+                  </p>
+                </div>
+              );
+            })()}
 
           </div>
 
-                {/* Simple transaction history to let user view what they entered */}
-                <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-xs text-right space-y-3 mt-6">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5 justify-start">
-                      <History size={14} className="text-slate-500" />
-                      <span>آخر التعاملات والمصروفات المسجلة حديثاً بالمحفظة</span>
-                    </h4>
+          {/* NEAT FINANCIAL DASHBOARD OVERVIEW: REVENUES, EXPENSES & BALANCE */}
+          <div className="bg-white border border-slate-150 rounded-3xl p-6 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="text-right">
+                <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 justify-start">
+                  <TrendingUp size={16} className="text-blue-600" />
+                  <span>التحليل البصري التفاعلي للأرباح والمصروفات</span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-1 select-none">رسم بياني تفاعلي ومؤشر دقيق لحركة الكاش المتوفر بالمحفظة مقارنة بالمصروفات العامة.</p>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-[10px] bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-black select-none">
+                  عرض تفاعلي مباشر
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              {/* Graphic Comparison Gauge */}
+              <div className="lg:col-span-4 space-y-5 text-right bg-slate-50/50 p-5 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-black text-slate-700">مقياس توزيع رأس المال ومؤشر الموازنة</h4>
+                
+                <div className="space-y-4">
+                  {/* Revenue gauge */}
+                  <div>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-slate-600 mb-1">
+                      <span>إجمالي التدفق الوارد (الإيرادات)</span>
+                      <span className="text-emerald-600 font-mono">
+                        {computedRevenues > 0 ? Math.round((computedRevenues / (computedRevenues + computedExpenses || 1)) * 100) : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex flex-row-reverse">
+                      <div 
+                        className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${computedRevenues > 0 ? (computedRevenues / (computedRevenues + computedExpenses || 1)) * 100 : 0}%` }}
+                      />
+                    </div>
                   </div>
-                  
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto scrollbar-thin">
-                    {(() => {
-                      const expenseLogs = ledger.filter(e => e.category === 'مصروفات عامة' || e.category === 'إيرادات عامة' || e.id.startsWith('manual_'));
-                      if (expenseLogs.length === 0) {
-                        return (
-                          <p className="text-[10px] text-slate-400 text-center py-4">لا توجد عمليات مخصصة مسجلة بالمصروفات حتى الآن.</p>
-                        );
-                      }
-                      return expenseLogs.map((entry) => {
-                        const isPositive = entry.amount > 0;
-                        return (
-                          <div key={entry.id} className="bg-slate-50 p-2.5 rounded-xl flex items-center justify-between text-xs text-right border border-slate-100/50">
-                            <div className="text-right">
-                              <p className="font-bold text-slate-800">{entry.note}</p>
-                              <p className="text-[9px] text-slate-400 font-mono mt-0.5">{entry.date}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-black font-mono ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                {isPositive ? '+' : ''}{entry.amount} {currency}
-                              </span>
-                              <button
-                                onClick={() => handleDeleteLedgerEntry(entry.id)}
-                                className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition cursor-pointer"
-                                title="حذف"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
+
+                  {/* Expense gauge */}
+                  <div>
+                    <div className="flex justify-between items-center text-[11px] font-bold text-slate-600 mb-1">
+                      <span>إجمالي التدفق الصادر (المصروفات)</span>
+                      <span className="text-rose-600 font-mono">
+                        {computedExpenses > 0 ? Math.round((computedExpenses / (computedRevenues + computedExpenses || 1)) * 100) : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex flex-row-reverse">
+                      <div 
+                        className="bg-rose-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${computedExpenses > 0 ? (computedExpenses / (computedRevenues + computedExpenses || 1)) * 105 : 0}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
 
+                <div className="border-t border-slate-200/60 pt-4 mt-2">
+                  {(() => {
+                    const balance = computedRevenues - computedExpenses;
+                    const divisor = computedRevenues || 1;
+                    const margin = Math.round((balance / divisor) * 100);
+                    const isProfitable = balance >= 0;
+                    return (
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-slate-450 font-black block">هامش التوازن النقدي الفعلي:</span>
+                        <div className="flex items-center gap-1.5 justify-start">
+                          <span className={`text-sm font-black px-2.5 py-1 rounded-lg ${isProfitable ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                            {margin}% {isProfitable ? 'فائض مالي 📈' : 'عجز في السيولة 📉'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-relaxed font-semibold">
+                          {isProfitable 
+                            ? 'النموذج المالي مستقر تماماً. المداخيل المسجلة بالخزينة تفي بالتزامات الإدارة وتزيد الأرباح.' 
+                            : 'تحذير: المصروفات العامة تفوق الإيرادات المستلمة حالياً، يرجى الاستغناء عن المصاريف الهامشية أو تحصيل اشتراكات الطلاب المتأخرة.'}
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
-            )}
+
+              {/* Recharts Column chart representing comparative views */}
+              <div className="lg:col-span-8">
+                <div className="h-[230px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={[
+                        { name: 'إجمالي المداخيل 🟢', value: computedRevenues, fill: '#10b981' },
+                        { name: 'المصروفات العامة 🔴', value: computedExpenses, fill: '#f43f5e' },
+                        { name: 'صافي التوازن المالي 🔵', value: computedRevenues - computedExpenses, fill: '#3b82f6' }
+                      ]}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold', fill: '#64748b' }} axisLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} />
+                      <Tooltip 
+                        contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'right', direction: 'rtl' }}
+                        formatter={(value: any) => [`${value} ${currency}`, 'القيمة']}
+                      />
+                      <Bar dataKey="value" radius={[10, 10, 0, 0]} maxBarSize={60}>
+                        <Cell fill="#10b981" />
+                        <Cell fill="#f43f5e" />
+                        <Cell fill="#3b82f6" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* TWO COLUMN CONTENT: FORM ON RIGHT, LEDGER TRANSACTION HISTORY ON LEFT */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* COLUMN 1: FORM */}
+            <div className="lg:col-span-5 bg-white border border-slate-100 rounded-3xl p-6 shadow-xs space-y-4">
+              <h3 className="text-sm font-black text-slate-800 text-right flex items-center gap-1.5 justify-start">
+                <Plus size={16} className="text-indigo-600" />
+                <span>تسجيل وإثبات حركة مالية مخصصة 🌿💸</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 text-right">أدخل القيمة والبيان واضغط على الزر المقابل لقيد العملية في سجل المحفظة.</p>
+              
+              <div className="space-y-4 text-right">
+                
+                {/* Amount input */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-black text-slate-600">مربع كتابة القيمة المالية (المبلغ):</label>
+                  <input
+                    type="number"
+                    required
+                    min="0.1"
+                    step="0.5"
+                    placeholder="0.00"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none font-mono font-black text-right"
+                  />
+                </div>
+
+                {/* Note input */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-black text-slate-600">مربع كتابة ملاحظة حول العملية (اختياري):</label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    placeholder="مثال: شراء أوراق وأقلام للمجموعات، إيجار القاعة"
+                    value={customNote}
+                    onChange={(e) => setCustomNote(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right placeholder:text-slate-350"
+                  />
+                </div>
+
+                {/* Two buttons representing Revenues vs Expenses */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  
+                  {/* Revenue Option Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parsed = parseFloat(customAmount);
+                      if (isNaN(parsed) || parsed <= 0) return;
+                      const change = parsed;
+                      const newBalance = budgetBalance + change;
+                      const newEntry: BudgetLedgerEntry = {
+                        id: 'manual_rev_' + Date.now(),
+                        amount: change,
+                        date: new Date().toISOString().split('T')[0],
+                        note: customNote.trim() || 'إيراد يدوي مسجل',
+                        category: 'إيرادات عامة'
+                      };
+                      saveBudget(newBalance, [newEntry, ...ledger]);
+                      setCustomAmount('');
+                      setCustomNote('');
+                      setSuccessFeedback(`تم بنجاح تسجيل إيراد جديد بقيمة +${parsed} ${currency}`);
+                      setTimeout(() => setSuccessFeedback(''), 5000);
+                    }}
+                    className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Plus size={14} />
+                    <span>إيراد مالي (+)</span>
+                  </button>
+
+                  {/* Expense Option Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parsed = parseFloat(customAmount);
+                      if (isNaN(parsed) || parsed <= 0) return;
+                      const change = -parsed;
+                      const newBalance = budgetBalance + change;
+                      const newEntry: BudgetLedgerEntry = {
+                        id: 'manual_exp_' + Date.now(),
+                        amount: change,
+                        date: new Date().toISOString().split('T')[0],
+                        note: customNote.trim() || 'مصروف يدوي مسجل',
+                        category: 'مصروفات عامة'
+                      };
+                      saveBudget(newBalance, [newEntry, ...ledger]);
+                      setCustomAmount('');
+                      setCustomNote('');
+                      setSuccessFeedback(`تم بنجاح تسجيل مصروف جديد بقيمة -${parsed} ${currency}`);
+                      setTimeout(() => setSuccessFeedback(''), 5000);
+                    }}
+                    className="bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Minus size={14} />
+                    <span>مصروف مالي (-)</span>
+                  </button>
+                </div>
+
+              </div>
+
+              {successFeedback && (
+                <p className="text-[11px] text-center font-bold text-emerald-600 bg-emerald-50 py-1.5 rounded-lg mt-3">
+                  {successFeedback}
+                </p>
+              )}
+
+            </div>
+
+            {/* COLUMN 2: LEDGER TRANSACTION HISTORY TABLE */}
+            <div className="lg:col-span-7 bg-white border border-slate-100 rounded-3xl p-5 shadow-xs text-right space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-100">
+                <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5 justify-start">
+                  <History size={15} className="text-indigo-500" />
+                  <span>سجل المعاملات والعمليات المالية مخرجات المحفظة</span>
+                </h4>
+                <span className="text-[9.5px] bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded-lg select-none">الكل</span>
+              </div>
+              
+              <div className="space-y-2 max-h-[360px] overflow-y-auto scrollbar-thin pr-0.5">
+                {(() => {
+                  const expenseLogs = ledger.filter(e => e.category === 'مصروفات عامة' || e.category === 'إيرادات عامة' || e.id.startsWith('manual_'));
+                  if (expenseLogs.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-slate-400">
+                        <span className="text-3xl mb-1 block select-none">💳</span>
+                        <p className="text-[11px] font-bold text-slate-650">لا توجد عمليات مخصصة مسجلة بالمحفظة حتى الآن.</p>
+                        <p className="text-[9.5px] mt-0.5 text-slate-400">قم بتسجيل الإيرادات والمصروفات اليدوية بالنموذج لتظهر هنا.</p>
+                      </div>
+                    );
+                  }
+                  return expenseLogs.map((entry) => {
+                    const isPositive = entry.amount > 0;
+                    return (
+                      <div 
+                        key={entry.id} 
+                        className="bg-slate-50 hover:bg-slate-100/70 p-3 rounded-xl flex items-center justify-between text-xs text-right border border-slate-100/50 transition-colors"
+                      >
+                        <div className="text-right">
+                          <p className="font-extrabold text-slate-800 text-[11px]">{entry.note}</p>
+                          <div className="flex items-center gap-1.5 text-[9.5px] text-slate-450 mt-0.5 select-none font-bold">
+                            <span className="font-mono">{entry.date}</span>
+                            <span>•</span>
+                            <span className={isPositive ? 'text-emerald-600' : 'text-rose-600'}>
+                              {isPositive ? 'إضافة إيراد' : 'صرف مصروف'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-extrabold font-sans text-sm ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {isPositive ? 'ج.م +' : 'ج.م -'}{Math.abs(entry.amount)}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteLedgerEntry(entry.id)}
+                            className="text-slate-400 hover:text-rose-650 p-1 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="حذف القيد المالي"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* ========================================== */}
       {/* PERFECT SINGLE-VIEW MANDATORY A4 WRAPPER FOR PDF PRINTING */}

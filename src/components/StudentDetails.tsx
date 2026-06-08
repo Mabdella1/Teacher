@@ -2137,66 +2137,100 @@ export default function StudentDetails({
           </div>
 
           {/* Tab Selection */}
-          <div className="bg-slate-50 border border-slate-200/80 p-1.5 rounded-2xl flex flex-wrap gap-1.5 items-center select-none shadow-3xs mb-4">
+          <div className="bg-slate-50 border border-slate-200/80 p-1.5 rounded-[22px] flex overflow-x-auto sm:grid sm:grid-cols-5 gap-2 select-none shadow-3xs mb-5 scrollbar-none snap-x snap-mandatory">
             <button
               onClick={() => setActiveTab('sessions')}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
+              className={`flex-1 sm:flex-initial min-w-[125px] sm:min-w-0 snap-center px-3.5 py-3 text-xs font-black rounded-2xl transition-all cursor-pointer duration-150 flex items-center justify-between sm:justify-center gap-2 border ${
                 activeTab === 'sessions' 
-                  ? 'bg-white text-indigo-750 shadow-sm border border-slate-100 font-black' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  ? 'bg-white text-indigo-950 border-indigo-150 shadow-xs ring-1 ring-indigo-500/5' 
+                  : 'text-slate-650 bg-transparent border-transparent hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              <CalendarCheck size={14} className="text-indigo-600 shrink-0" />
-              <span>سجل الحصص</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{sessionsCount}</span>
+              <span className="flex items-center gap-1.5">
+                <CalendarCheck size={14} className={activeTab === 'sessions' ? 'text-indigo-600' : 'text-slate-450'} />
+                <span>سجل الحصص</span>
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-sans ${
+                activeTab === 'sessions' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-200/60 text-slate-600'
+              }`}>
+                {sessionsCount}
+              </span>
             </button>
+
             <button
               onClick={() => setActiveTab('payments')}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
+              className={`flex-1 sm:flex-initial min-w-[125px] sm:min-w-0 snap-center px-3.5 py-3 text-xs font-black rounded-2xl transition-all cursor-pointer duration-150 flex items-center justify-between sm:justify-center gap-2 border ${
                 activeTab === 'payments' 
-                  ? 'bg-white text-emerald-750 shadow-sm border border-slate-100 font-black' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  ? 'bg-white text-emerald-950 border-emerald-150 shadow-xs ring-1 ring-emerald-500/5' 
+                  : 'text-slate-650 bg-transparent border-transparent hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              <CreditCard size={14} className="text-emerald-600 shrink-0" />
-              <span>سجل الدفعات</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.payments.length}</span>
+              <span className="flex items-center gap-1.5">
+                <CreditCard size={14} className={activeTab === 'payments' ? 'text-emerald-600' : 'text-slate-450'} />
+                <span>سجل الدفعات</span>
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-sans ${
+                activeTab === 'payments' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200/60 text-slate-600'
+              }`}>
+                {student.payments.length}
+              </span>
             </button>
+
             <button
               onClick={() => setActiveTab('rewards')}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
+              className={`flex-1 sm:flex-initial min-w-[125px] sm:min-w-0 snap-center px-3.5 py-3 text-xs font-black rounded-2xl transition-all cursor-pointer duration-150 flex items-center justify-between sm:justify-center gap-2 border ${
                 activeTab === 'rewards' 
-                  ? 'bg-white text-amber-750 shadow-sm border border-slate-100 font-black' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  ? 'bg-white text-amber-950 border-amber-200 shadow-xs ring-1 ring-amber-500/5' 
+                  : 'text-slate-650 bg-transparent border-transparent hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              <Award size={14} className="text-amber-500 shrink-0" />
-              <span>المكافأة</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.rewardPoints || 0}</span>
+              <span className="flex items-center gap-1.5">
+                <Award size={14} className={activeTab === 'rewards' ? 'text-amber-500' : 'text-slate-450'} />
+                <span>المكافأة</span>
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-sans ${
+                activeTab === 'rewards' ? 'bg-amber-50 text-amber-700' : 'bg-slate-200/60 text-slate-600'
+              }`}>
+                {student.rewardPoints || 0}
+              </span>
             </button>
+
             <button
               onClick={() => setActiveTab('studyNotes')}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
+              className={`flex-1 sm:flex-initial min-w-[125px] sm:min-w-0 snap-center px-3.5 py-3 text-xs font-black rounded-2xl transition-all cursor-pointer duration-150 flex items-center justify-between sm:justify-center gap-2 border ${
                 activeTab === 'studyNotes' 
-                  ? 'bg-white text-pink-750 shadow-sm border border-slate-100 font-black' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  ? 'bg-white text-pink-950 border-pink-150 shadow-xs ring-1 ring-pink-500/5' 
+                  : 'text-slate-650 bg-transparent border-transparent hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              <Notebook size={14} className="text-pink-500 shrink-0" />
-              <span>الملاحظة</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.studyNotes?.length || 0}</span>
+              <span className="flex items-center gap-1.5">
+                <Notebook size={14} className={activeTab === 'studyNotes' ? 'text-pink-500' : 'text-slate-450'} />
+                <span>الملاحظة</span>
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-sans ${
+                activeTab === 'studyNotes' ? 'bg-pink-50 text-pink-700' : 'bg-slate-200/60 text-slate-600'
+              }`}>
+                {student.studyNotes?.length || 0}
+              </span>
             </button>
+
             <button
               onClick={() => setActiveTab('whatsAppTemplates')}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all cursor-pointer duration-150 flex items-center gap-1.5 ${
+              className={`flex-1 sm:flex-initial min-w-[125px] sm:min-w-0 snap-center px-3.5 py-3 text-xs font-black rounded-2xl transition-all cursor-pointer duration-150 flex items-center justify-between sm:justify-center gap-2 border ${
                 activeTab === 'whatsAppTemplates' 
-                  ? 'bg-white text-emerald-750 shadow-sm border border-slate-100 font-black' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  ? 'bg-white text-emerald-950 border-emerald-150 shadow-xs ring-1 ring-emerald-500/5' 
+                  : 'text-slate-650 bg-transparent border-transparent hover:text-slate-900 hover:bg-white/40'
               }`}
             >
-              <Share2 size={14} className="text-emerald-600 shrink-0" />
-              <span>قوالب واتس</span>
-              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">{student.whatsAppTemplates?.length || 0}</span>
+              <span className="flex items-center gap-1.5">
+                <Share2 size={14} className={activeTab === 'whatsAppTemplates' ? 'text-emerald-600' : 'text-slate-450'} />
+                <span>قوالب واتس</span>
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-sans ${
+                activeTab === 'whatsAppTemplates' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200/60 text-slate-600'
+              }`}>
+                {student.whatsAppTemplates?.length || 0}
+              </span>
             </button>
           </div>
 
@@ -3471,9 +3505,9 @@ ${note.content}
                       <button
                         type="button"
                         onClick={handleClearRewardTransactions}
-                        className="flex items-center gap-1 bg-rose-50 border border-rose-200 hover:bg-rose-100/80 text-rose-700 text-[10.5px] font-black px-3 py-1.5 rounded-xl transition cursor-pointer duration-200 shadow-3xs active:scale-95"
+                        className="flex items-center gap-1.5 bg-rose-50 border border-rose-250 hover:bg-rose-100 text-rose-700 text-[11px] font-black px-4 py-2 rounded-xl transition cursor-pointer duration-200 shadow-3xs active:scale-95"
                       >
-                        <span>تصفير كشف المكافآت والعمليات 🧹</span>
+                        <span>حذف الكل 🗑️</span>
                       </button>
                     )}
                   </div>
@@ -4306,27 +4340,32 @@ ${note.content}
                 }`}>
                   <AlertTriangle size={22} />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 text-right">
                   <h4 className="text-base font-bold text-slate-900 leading-snug">
-                    {confirmDialog.type === 'session-over-limit' && 'تنبيه: تخطي حد الحصص'}
-                    {confirmDialog.type === 'delete-session' && 'تأكيد حذف الحصة'}
-                    {confirmDialog.type === 'delete-payment' && 'تأكيد حذف الدفعة'}
-                    {confirmDialog.type === 'print-error' && 'تنبيه بخصوص طباعة التقرير / PDF'}
+                    {confirmDialog.type === 'session-over-limit' ? 'تنبيه: تخطي حد الحصص' :
+                     confirmDialog.type === 'delete-session' ? 'تأكيد حذف الحصة' :
+                     confirmDialog.type === 'delete-payment' ? 'تأكيد حذف الدفعة' :
+                     confirmDialog.type === 'print-error' ? 'تنبيه بخصوص طباعة التقرير / PDF' :
+                     confirmDialog.type === 'delete-reward-tx' ? 'تأكيد حذف عملية النقاط والمكافآت' :
+                     confirmDialog.type === 'clear-reward-txs' ? 'تأكيد حذف كافة العمليات' :
+                     'تأكيد الإجراء والعملية'}
                   </h4>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed whitespace-pre-line">
-                    {confirmDialog.type === 'session-over-limit' && (
+                    {confirmDialog.type === 'session-over-limit' ? (
                       student.type === 'course'
                         ? 'لقد استنفذ هذا الطالب كامل عدد حصص الاشتراك بالكورس المسجلة له بالفعل! هل أنت متأكد من تسجيل هذه الحصة كحصة إضافية؟'
                         : 'لقد تخطى هذا الطالب حد الحصص المحدد له بالفعل! هل أنت متأكد من تسجيل هذه الحصة كحصة إضافية؟'
-                    )}
-                    {confirmDialog.type === 'delete-session' && 'هل أنت متأكد من حذف تسجيل هذه الحصة؟ سيعاد احتساب المستحقات المالية للطالب.'}
-                    {confirmDialog.type === 'delete-payment' && 'هل أنت متأكد من حذف هذه الدفعة المالية؟ سيعاد احتساب الرصيد المتبقي على الطالب.'}
-                    {confirmDialog.type === 'print-error' && 
+                    ) :
+                     confirmDialog.type === 'delete-session' ? 'هل أنت متأكد من حذف تسجيل هذه الحصة؟ سيعاد احتساب المستحقات المالية للطالب.' :
+                     confirmDialog.type === 'delete-payment' ? 'هل أنت متأكد من حذف هذه الدفعة المالية؟ سيعاد احتساب الرصيد المتبقي على الطالب.' :
+                     confirmDialog.type === 'delete-reward-tx' ? 'هل أنت متأكد من حذف هذه المعاملة؟ سيتم إرجاع وتعديل رصيد كشف النقاط وفقاً لذلك.' :
+                     confirmDialog.type === 'clear-reward-txs' ? 'هل أنت متأكد من حذف وتصفير جميع حركات وعمليات سجل النقاط لهذا الطالب بالكامل؟ سيتم تصفير النقاط.' :
+                     confirmDialog.type === 'print-error' ? 
                       `أنت تتصفح التطبيق حالياً من داخل نافذة المعاينة السريعة والمحمية (iFrame)، والتي تمنع متصفحات الويب تشغيل أوامر الطباعة المباشرة بداخلها لأسباب أمنية.
 
 للطباعة وحفظ التقرير كـ PDF بنجاح وسهولة:
 1. يرجى فتح التطبيق في علامة تبويب كاملة ومستقلة بالمتصفح بالضغط على زر فتح الرابط الخارجي (الأيقونة أو السهم بأعلى نافذة المعاينة).
-2. ثم اضغط على زر طباعة من هناك لتظهر نافذة حفظ الـ PDF فوراً.`}
+2. ثم اضغط على زر طباعة من هناك لتظهر نافذة حفظ الـ PDF فوراً.` : 'هل تريد تأكيد وحفظ هذا الإجراء المختار؟'}
                   </p>
                 </div>
               </div>
@@ -4349,6 +4388,10 @@ ${note.content}
                         executeDeleteSession(confirmDialog.data);
                       } else if (confirmDialog.type === 'delete-payment') {
                         executeDeletePayment(confirmDialog.data);
+                      } else if (confirmDialog.type === 'delete-reward-tx') {
+                        executeDeleteRewardTransaction(confirmDialog.data);
+                      } else if (confirmDialog.type === 'clear-reward-txs') {
+                        executeClearRewardTransactions();
                       }
                       setConfirmDialog(null);
                     }}

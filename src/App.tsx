@@ -8,6 +8,7 @@ import StudentDetails from './components/StudentDetails';
 import Scheduler from './components/Scheduler';
 import FinancialReports from './components/FinancialReports';
 import SettingsPanel from './components/SettingsPanel';
+import TeacherProfileTab from './components/TeacherProfileTab';
 import NotificationCenter from './components/NotificationCenter';
 import ThemeStyleInjector from './components/ThemeStyleInjector';
 import Dashboard from './components/Dashboard';
@@ -29,8 +30,10 @@ const DEFAULT_PREFERENCES: TeacherPreferences = {
   subject: '',
   currency: 'ج.م',
   passcode: '', // Guided setup on first load
+  primaryColor: 'blue',
   enableWhatsApp24hReminders: true,
   autoBackupDownloadInterval: 'daily',
+  enableAutoCloudSync: true,
 };
 
 const DEFAULT_STUDENTS: Student[] = [
@@ -126,7 +129,7 @@ export default function App() {
   const [examAppointments, setExamAppointments] = useState<ExamAppointment[]>([]);
   
   // App view control
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings' | 'chat' | 'rewards'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'students' | 'schedule' | 'financials' | 'settings' | 'chat' | 'rewards' | 'teacher'>('dashboard');
   const [navDropdownOpen, setNavDropdownOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(true);
@@ -179,9 +182,11 @@ export default function App() {
         subject: nextPrefs.subject,
         currency: nextPrefs.currency || 'ج.م',
         passcode: nextPrefs.passcode || '',
-        primaryColor: nextPrefs.primaryColor || 'indigo',
+        primaryColor: nextPrefs.primaryColor || 'blue',
         enableWhatsApp24hReminders: nextPrefs.enableWhatsApp24hReminders !== false,
         autoBackupDownloadInterval: nextPrefs.autoBackupDownloadInterval || 'disabled',
+        enableAutoCloudSync: nextPrefs.enableAutoCloudSync !== false,
+        teacherAvatar: nextPrefs.teacherAvatar || '',
         students: nextStudents,
         appointments: nextApps,
         examAppointments: nextExams,
@@ -216,9 +221,11 @@ export default function App() {
         subject: preferences.subject,
         currency: preferences.currency || 'ج.م',
         passcode: preferences.passcode || '',
-        primaryColor: preferences.primaryColor || 'indigo',
+        primaryColor: preferences.primaryColor || 'blue',
         enableWhatsApp24hReminders: preferences.enableWhatsApp24hReminders !== false,
         autoBackupDownloadInterval: preferences.autoBackupDownloadInterval || 'disabled',
+        enableAutoCloudSync: preferences.enableAutoCloudSync !== false,
+        teacherAvatar: preferences.teacherAvatar || '',
         students,
         appointments,
         examAppointments,
@@ -310,7 +317,7 @@ export default function App() {
             subject: cloudData.subject,
             currency: cloudData.currency || 'ج.م',
             passcode: cloudData.passcode || '',
-            primaryColor: cloudData.primaryColor || 'indigo',
+            primaryColor: cloudData.primaryColor || 'blue',
             enableWhatsApp24hReminders: cloudData.enableWhatsApp24hReminders !== false,
             autoBackupDownloadInterval: cloudData.autoBackupDownloadInterval || 'disabled'
           };
@@ -416,6 +423,11 @@ export default function App() {
       setSyncError(null);
       return;
     }
+    if (preferences.enableAutoCloudSync === false) {
+      setSyncState('synced');
+      setSyncError(null);
+      return;
+    }
     if (!isCloudPullCompleted) return; // Prevent overwriting cloud data before initial pull completes
 
     // Keep syncState silent during automatic background sync to avoid visual distraction
@@ -429,9 +441,11 @@ export default function App() {
           subject: preferences.subject,
           currency: preferences.currency || 'ج.م',
           passcode: preferences.passcode || '',
-          primaryColor: preferences.primaryColor || 'indigo',
+          primaryColor: preferences.primaryColor || 'blue',
           enableWhatsApp24hReminders: preferences.enableWhatsApp24hReminders !== false,
           autoBackupDownloadInterval: preferences.autoBackupDownloadInterval || 'disabled',
+          enableAutoCloudSync: preferences.enableAutoCloudSync !== false,
+          teacherAvatar: preferences.teacherAvatar || '',
           students,
           appointments,
           examAppointments,
@@ -471,6 +485,7 @@ export default function App() {
     preferences.primaryColor,
     preferences.enableWhatsApp24hReminders,
     preferences.autoBackupDownloadInterval,
+    preferences.enableAutoCloudSync,
   ]);
 
   // Google Drive automated background sync/backup of modifications & daily checkes
@@ -830,7 +845,7 @@ export default function App() {
       subject: '',
       currency: 'ج.م',
       passcode: '', // Guided setup reset
-      primaryColor: 'indigo',
+      primaryColor: 'blue',
       enableWhatsApp24hReminders: true,
       autoBackupDownloadInterval: 'disabled',
     };
@@ -1123,6 +1138,21 @@ export default function App() {
 
             <button
               onClick={() => {
+                setActiveTab('teacher');
+                setSelectedStudentId(null);
+              }}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer shrink-0 ${
+                activeTab === 'teacher'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/15'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <GraduationCap size={15} />
+              <span>ملف المعلم 🧑‍🏫</span>
+            </button>
+
+            <button
+              onClick={() => {
                 setActiveTab('settings');
                 setSelectedStudentId(null);
               }}
@@ -1136,19 +1166,7 @@ export default function App() {
               <span>الإعدادات</span>
             </button>
 
-            {/* Teacher Profile Info - At Ribbon swapped to the left of Settings */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-150/80 px-2.5 py-1.5 sm:py-2 rounded-xl shrink-0 text-[10px] sm:text-xs font-black text-slate-800 self-center">
-              <div className="w-5.5 h-5.5 rounded-lg bg-indigo-600/10 text-indigo-600 flex items-center justify-center shrink-0">
-                <User size={12} className="text-indigo-600" />
-              </div>
-              <span className="truncate max-w-[70px] sm:max-w-[120px]">{preferences.teacherName}</span>
-              {preferences.subject && (
-                <>
-                  <span className="text-slate-300 mx-0.5">•</span>
-                  <span className="text-indigo-600 font-extrabold truncate max-w-[60px] sm:max-w-[100px]">{preferences.subject}</span>
-                </>
-              )}
-            </div>
+
           </div>
         </div>
       </nav>
@@ -1170,7 +1188,7 @@ export default function App() {
             }`}
           >
             <span className="flex items-center gap-2.5">
-              <LayoutGrid size={16} className={`${activeTab === 'dashboard' && !selectedStudentId ? 'text-white' : 'text-slate-555'}`} />
+              <LayoutGrid size={16} className={`${activeTab === 'dashboard' && !selectedStudentId ? 'text-white' : 'text-slate-550'}`} />
               <span>لوحة التحكم</span>
             </span>
           </button>
@@ -1269,6 +1287,24 @@ export default function App() {
             <span className="flex items-center gap-2.5">
               <Award size={16} className={`${activeTab === 'rewards' ? 'text-white' : 'text-slate-550'}`} />
               <span>لوحة الأوسمة والجوائز 🏆</span>
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('teacher');
+              setSelectedStudentId(null);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full text-right flex items-center justify-between px-4 py-3 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'teacher'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <GraduationCap size={16} className={`${activeTab === 'teacher' ? 'text-white' : 'text-slate-550'}`} />
+              <span>ملف المعلم 🧑‍🏫</span>
             </span>
           </button>
 
@@ -1380,6 +1416,14 @@ export default function App() {
                     students={students}
                     currency={preferences.currency}
                     onUpdateStudent={handleUpdateStudent}
+                  />
+                )}
+
+                {activeTab === 'teacher' && (
+                  <TeacherProfileTab
+                    preferences={preferences}
+                    students={students}
+                    appointments={appointments}
                   />
                 )}
 

@@ -209,140 +209,164 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
     <div className="space-y-6">
       {/* Header Metrics Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* TOTAL STUDENTS */}
         <motion.div 
-          whileHover={{ y: -4, scale: 1.01 }}
-          className="premium-card p-5 flex items-center gap-4.5 relative overflow-hidden group"
+          whileHover={{ y: -3, scale: 1.005 }}
+          className="bg-indigo-50/45 border-2 border-indigo-400/80 rounded-[24px] p-5.5 shadow-3xs relative overflow-hidden group transition-all duration-300 hover:shadow-md"
         >
-          <div className="absolute right-0 top-0 h-1 border-r-4 border-indigo-500 rounded-bl-3xl" />
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100/75 flex items-center justify-center text-indigo-600 shadow-3xs group-hover:scale-105 transition-transform duration-300">
-            <GraduationCap size={22} className="glow-pulse" />
+          <div className="absolute right-0 top-0 w-2 h-full bg-indigo-500" />
+          <div className="flex items-center justify-between pb-1">
+            <p className="text-xs font-black text-indigo-900 pr-1 select-none">إجمالي المقيدين بالدفعة</p>
+            <span className="p-2.5 bg-indigo-100 text-indigo-750 rounded-2xl group-hover:scale-105 transition-transform duration-300">
+              <GraduationCap size={18} />
+            </span>
           </div>
-          <div>
-            <p className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wide">إجمالي المقيدين بالدفعة</p>
-            <p className="text-xl font-black text-slate-800 mt-1">{students.length} <span className="text-xs font-bold text-slate-500">طلاب وطالبات</span></p>
+          <div className="mt-3.5 flex items-baseline justify-start gap-1.5 pr-1">
+            <span className="text-3xl font-extrabold text-indigo-900 tracking-tight leading-none font-sans">
+              {students.length}
+            </span>
+            <span className="text-[11px] font-black text-indigo-600">طلاب وطالبات</span>
           </div>
+          <p className="text-[10px] text-indigo-700/80 font-medium mt-3.5 pr-1 select-none">العدد الكلي للمقيدين الفعليين بالبرنامج التعليمي والمجموعة.</p>
         </motion.div>
 
+        {/* LESSON SYSTEM */}
         <motion.div 
-          whileHover={{ y: -4, scale: 1.01 }}
-          className="premium-card p-5 flex items-center gap-4.5 relative overflow-hidden group"
+          whileHover={{ y: -3, scale: 1.005 }}
+          className="bg-teal-50/45 border-2 border-teal-400/80 rounded-[24px] p-5.5 shadow-3xs relative overflow-hidden group transition-all duration-300 hover:shadow-md"
         >
-          <div className="absolute right-0 top-0 h-1 border-r-4 border-teal-500 rounded-bl-3xl" />
-          <div className="w-12 h-12 rounded-xl bg-teal-50 border border-teal-100/75 flex items-center justify-center text-teal-600 shadow-3xs group-hover:scale-105 transition-transform duration-300">
-            <CalendarRange size={22} />
+          <div className="absolute right-0 top-0 w-2 h-full bg-teal-500" />
+          <div className="flex items-center justify-between pb-1">
+            <p className="text-xs font-black text-teal-900 pr-1 select-none">نظام المحاسبة بالحصة</p>
+            <span className="p-2.5 bg-teal-100 text-teal-700 rounded-2xl group-hover:scale-105 transition-transform duration-300">
+              <CalendarRange size={18} />
+            </span>
           </div>
-          <div>
-            <p className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wide">نظام المحاسبة بالحصة</p>
-            <p className="text-xl font-black text-slate-800 mt-1">{students.filter(s => s.type === 'lesson').length} <span className="text-xs font-bold text-slate-500">طالب نشط</span></p>
+          <div className="mt-3.5 flex items-baseline justify-start gap-1.5 pr-1">
+            <span className="text-3xl font-extrabold text-teal-900 tracking-tight leading-none font-sans">
+              {students.filter(s => s.type === 'lesson').length}
+            </span>
+            <span className="text-[11px] font-black text-teal-600">طالب نشط بالحصة</span>
           </div>
+          <p className="text-[10px] text-teal-700/80 font-medium mt-3.5 pr-1 select-none">الطلاب التابعين للمحاسبة الفردية لكل حضور دراسي مسجل.</p>
         </motion.div>
 
+        {/* COURSE SYSTEM */}
         <motion.div 
-          whileHover={{ y: -4, scale: 1.01 }}
-          className="premium-card p-5 flex items-center gap-4.5 relative overflow-hidden group"
+          whileHover={{ y: -3, scale: 1.005 }}
+          className="bg-pink-50/45 border-2 border-pink-400/80 rounded-[24px] p-5.5 shadow-3xs relative overflow-hidden group transition-all duration-300 hover:shadow-md"
         >
-          <div className="absolute right-0 top-0 h-1 border-r-4 border-pink-500 rounded-bl-3xl" />
-          <div className="w-12 h-12 rounded-xl bg-pink-50 border border-pink-100/75 flex items-center justify-center text-pink-600 shadow-3xs group-hover:scale-105 transition-transform duration-300">
-            <Layers size={22} />
+          <div className="absolute right-0 top-0 w-2 h-full bg-pink-500" />
+          <div className="flex items-center justify-between pb-1">
+            <p className="text-xs font-black text-pink-900 pr-1 select-none">نظام الاشتراك بالكورسات</p>
+            <span className="p-2.5 bg-pink-100 text-pink-700 rounded-2xl group-hover:scale-105 transition-transform duration-300">
+              <Layers size={18} />
+            </span>
           </div>
-          <div>
-            <p className="text-[11px] text-slate-400 font-extrabold uppercase tracking-wide">نظام الاشتراك بالكورسات</p>
-            <p className="text-xl font-black text-slate-800 mt-1">{students.filter(s => s.type === 'course').length} <span className="text-xs font-bold text-slate-500">طالب حالي</span></p>
+          <div className="mt-3.5 flex items-baseline justify-start gap-1.5 pr-1">
+            <span className="text-3xl font-extrabold text-pink-900 tracking-tight leading-none font-sans">
+              {students.filter(s => s.type === 'course').length}
+            </span>
+            <span className="text-[11px] font-black text-pink-600">طالب حالي بالكورس</span>
           </div>
+          <p className="text-[10px] text-pink-700/80 font-medium mt-3.5 pr-1 select-none">المنضمون للباقات التعليمية الشهرية والكورسات الكاملة.</p>
         </motion.div>
       </div>
 
       {/* Filters and Search and Actions */}
-      <div className="premium-card p-4.5 flex flex-col xl:flex-row gap-4 items-center justify-between">
-        <div className="flex gap-2.5 w-full xl:w-[460px] items-center">
-          <div className="relative flex-grow">
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-              <Search size={18} />
-            </span>
-            <input
-              type="text"
-              placeholder="ابحث بالنقر عن اسم طالب أو هاتف المتابعة للطلب..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-450 focus:outline-none focus:border-indigo-500/85 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 transition-all duration-300 premium-input"
-            />
-          </div>
+      <div className="bg-white border border-slate-100 rounded-[26px] p-5 shadow-3xs flex flex-col xl:flex-row gap-5 items-center justify-between">
+        
+        {/* Search Input Box */}
+        <div className="relative w-full xl:w-[380px]">
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-440 pointer-events-none select-none">
+            <Search size={16} />
+          </span>
+          <input
+            type="text"
+            placeholder="ابحث بالنقر عن اسم طالب أو هاتف المتابعة للطلب..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pr-11 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-50/70 transition-all duration-300 premium-input"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3.5 w-full xl:w-auto justify-end">
-          {/* Learn system check type filter */}
-          <div className="flex gap-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200/50 text-[11px] font-black">
+        {/* Action Controls & Filters Custom Styling */}
+        <div className="flex flex-col sm:flex-row flex-wrap items-center gap-4 w-full xl:w-auto justify-end">
+          
+          {/* Sub-group 1: System Types */}
+          <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-200/60 text-[11px] font-black w-full sm:w-auto justify-center select-none">
             <button
                onClick={() => setFilterType('all')}
-               className={`px-3.5 py-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
+               className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
                  filterType === 'all' 
-                   ? 'bg-indigo-600 text-white shadow-xs' 
-                   : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/30'
+                   ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-xs' 
+                   : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/30'
                }`}
              >
                كافة الأنظمة
              </button>
              <button
                onClick={() => setFilterType('lesson')}
-               className={`px-3.5 py-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
+               className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
                  filterType === 'lesson' 
-                   ? 'bg-indigo-600 text-white shadow-xs' 
-                   : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/30'
+                   ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-xs' 
+                   : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/30'
                }`}
              >
                بالحصة
              </button>
              <button
                onClick={() => setFilterType('course')}
-              className={`px-3.5 py-2 rounded-lg transition-all duration-200 cursor-pointer ${
-                filterType === 'course' 
-                  ? 'bg-indigo-600 text-white shadow-xs' 
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
-              }`}
-            >
-              بالكورس
-            </button>
+               className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                 filterType === 'course' 
+                   ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-xs' 
+                   : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/30'
+               }`}
+             >
+               بالكورس
+             </button>
           </div>
 
-          {/* Status checklist filter */}
-          <div className="flex gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 text-[11px] font-black">
+          {/* Sub-group 2: Student Statuses */}
+          <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-200/60 text-[11px] font-black w-full sm:w-auto justify-center select-none">
             <button
               onClick={() => setFilterStatus('all')}
-              className={`px-3 py-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 filterStatus === 'all' 
-                  ? 'bg-slate-800 text-white' 
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                  ? 'bg-slate-800 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/30'
               }`}
             >
               الكل
             </button>
             <button
               onClick={() => setFilterStatus('active')}
-              className={`px-3 py-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 filterStatus === 'active' 
-                  ? 'bg-emerald-600 text-white' 
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                  ? 'bg-emerald-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/30'
               }`}
             >
               النشطين
             </button>
             <button
               onClick={() => setFilterStatus('inactive')}
-              className={`px-3 py-2 rounded-lg transition-all duration-200 cursor-pointer ${
+              className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 filterStatus === 'inactive' 
-                  ? 'bg-rose-600 text-white' 
-                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                  ? 'bg-rose-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/30'
               }`}
             >
               المتوقفين
             </button>
           </div>
 
+          {/* Add Student CTA Button */}
           <button
             onClick={() => setIsOpenAddModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all text-white text-xs font-black rounded-xl cursor-pointer shadow-md shadow-indigo-600/10 mr-auto xl:mr-0 shrink-0"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition-all text-white text-xs font-black rounded-2xl cursor-pointer shadow-sm shadow-indigo-600/10 shrink-0"
           >
-            <UserPlus size={16} />
+            <UserPlus size={15} />
             <span>تسجيل طالب جديد</span>
           </button>
         </div>
@@ -786,7 +810,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                         <button
                           type="button"
                           onClick={() => setEditPhoto(undefined)}
-                          className="absolute -top-1.5 -right-1.5 bg-slate-100 border border-slate-200 hover:bg-red-50 hover:text-red-600 rounded-full p-0.5 text-slate-500"
+                          className="absolute -top-1.5 -right-1.5 bg-slate-100 border border-slate-200 hover:bg-red-50 hover:text-red-650 rounded-full p-0.5 text-slate-500"
                         >
                           <X size={10} />
                         </button>
@@ -860,13 +884,13 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                   <h3 className="text-lg font-bold text-slate-900 leading-snug">
                     تأكيد حذف الطالب نهائياً
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed font-sans">
                     هل أنت متأكد من حذف الطالب <span className="font-extrabold text-slate-800">"{deleteConfirmStudent.name}"</span>؟
                   </p>
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 text-xs space-y-2 mb-5 text-slate-600">
+              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 text-xs space-y-2 mb-5 text-slate-600 font-sans">
                 <p className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                   <span>سيتم حذف كامل سجل حصصه وتفاصيل حضوره وغيابه.</span>
@@ -942,7 +966,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
 
               <div className="space-y-4 mb-6">
                 <div>
-                  <label className="block text-[11px] font-black text-slate-700 mb-1.5">تاريخ الحدوث والتذكير *</label>
+                  <label className="block text-[11px] font-black text-slate-707 mb-1.5">تاريخ الحدوث والتذكير *</label>
                   <input
                     type="date"
                     required
@@ -968,7 +992,7 @@ export default function StudentList({ students, onSelectStudent, onAddStudent, o
                 <button
                   type="button"
                   onClick={() => setReminderModalStudent(null)}
-                  className="px-4 py-2.5 text-slate-650 hover:text-slate-850 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer font-bold"
+                  className="px-4 py-2.5 text-slate-650 hover:text-slate-855 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer font-bold"
                 >
                   إلغاء الأمر
                 </button>

@@ -540,7 +540,7 @@ export default function Dashboard({ students, appointments, preferences, onSelec
                 <span>مستحق السداد والتحصيل قريباً</span>
               </p>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-rose-550 text-white flex items-center justify-center border border-rose-500 shadow-3xs group-hover:scale-110 transition-transform duration-200">
+            <div className="w-11 h-11 rounded-xl bg-rose-600 text-white flex items-center justify-center border border-rose-500 shadow-3xs group-hover:scale-110 transition-transform duration-200">
               <DollarSign size={18} />
             </div>
           </div>
