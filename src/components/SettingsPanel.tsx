@@ -36,6 +36,7 @@ export default function SettingsPanel({
   const [subject, setSubject] = useState(preferences.subject);
   const [currency, setCurrency] = useState(preferences.currency);
   const [primaryColor, setPrimaryColor] = useState(preferences.primaryColor || 'blue');
+  const [fontFamily, setFontFamily] = useState(preferences.fontFamily || 'cairo');
   const [enableWhatsApp24h, setEnableWhatsApp24h] = useState(preferences.enableWhatsApp24hReminders !== false);
   const [hideAIAnalysis, setHideAIAnalysis] = useState(preferences.hideAIAnalysis === true);
   const [hideGoogleCalendar, setHideGoogleCalendar] = useState(preferences.hideGoogleCalendar === true);
@@ -137,8 +138,9 @@ export default function SettingsPanel({
       enableWhatsApp24hReminders: enableWhatsApp24h,
       hideAIAnalysis: hideAIAnalysis,
       hideGoogleCalendar: hideGoogleCalendar,
+      fontFamily: fontFamily,
     });
-    triggerSuccess('تم حفظ الإعدادات التفضيلية واللون الأساسي بنجاح!');
+    triggerSuccess('تم حفظ الإعدادات التفضيلية واللون الأساسي والخط المخصص بنجاح!');
   };
 
   const handleChangePasscode = (e: React.FormEvent) => {
@@ -884,59 +886,139 @@ export default function SettingsPanel({
                     {/* Centered Profile Settings Form */}
                     <form onSubmit={handleSavePreferences} className="space-y-6">
                       
-                      {/* Interactive Teacher Profile Avatar Customizer */}
-                      <div className="flex flex-col items-center justify-center p-6 bg-slate-50 border border-slate-205 rounded-[28px] space-y-3.5 max-w-sm mx-auto shadow-3xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const input = document.createElement('input');
-                            input.type = 'file';
-                            input.accept = 'image/*';
-                            input.onchange = (e: any) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onload = (uploadEvent) => {
-                                  const base64Str = uploadEvent.target?.result as string;
-                                  onUpdatePreferences({ teacherAvatar: base64Str });
-                                  triggerSuccess('تمت وعولجت ترقية صورة الأستاذ بنجاح! 📸');
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            };
-                            input.click();
-                          }}
-                          className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md flex items-center justify-center bg-slate-200 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all shrink-0"
-                          style={{ borderColor: accentColor }}
-                          title="تعديل صورة الأستاذ"
-                        >
-                          {preferences.teacherAvatar ? (
-                            <img 
-                              src={preferences.teacherAvatar} 
-                              alt={teacherName} 
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <span className="text-5xl select-none group-hover:scale-105 transition-transform duration-300">🧑‍🏫</span>
-                          )}
-                          
-                          {/* Modern Glass-morphic Camera Dark Overlay */}
-                          <div className="absolute inset-0 bg-black/55 backdrop-blur-[0.5px] opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-all duration-200">
-                            <Camera size={18} className="text-amber-400" />
-                            <span className="text-[10px] font-black text-white px-1 leading-none">تعديل</span>
-                          </div>
-
-                          {/* Always-visible camera mini-badge uploader indicator for mobile/touch screens */}
-                          <div className="absolute bottom-1 right-1 w-6.5 h-6.5 rounded-full bg-slate-900 group-hover:bg-slate-800 text-white flex items-center justify-center shadow-xs border border-white/60 pointer-events-none transition-colors">
-                            <Camera size={10} className="text-amber-405" />
-                          </div>
-                        </button>
+                      {/* Interactive Uploaders for Profile & Custom Logo */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto p-6 bg-slate-50 border border-slate-205 rounded-[28px] shadow-3xs mb-6">
                         
-                        <div className="text-center">
-                          <span className="text-xs font-black text-slate-800 block">الصورة الرمزية للأستاذ</span>
-                          <span className="text-[10px] text-slate-415 font-bold leading-relaxed block mt-0.5">انقر على صورتك مباشرة لتغييرها أو تعديلها</span>
+                        {/* 1. Teacher Avatar Uploader */}
+                        <div className="flex flex-col items-center justify-center space-y-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = 'image/*';
+                              input.onchange = (e: any) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (uploadEvent) => {
+                                    const base64Str = uploadEvent.target?.result as string;
+                                    onUpdatePreferences({ teacherAvatar: base64Str });
+                                    triggerSuccess('تمت وعولجت ترقية صورة الأستاذ بنجاح! 📸');
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              };
+                              input.click();
+                            }}
+                            className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md flex items-center justify-center bg-slate-200 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all shrink-0"
+                            style={{ borderColor: accentColor }}
+                            title="تعديل صورة الأستاذ"
+                          >
+                            {preferences.teacherAvatar ? (
+                              <img 
+                                src={preferences.teacherAvatar} 
+                                alt={teacherName} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="text-5xl select-none group-hover:scale-105 transition-transform duration-300">🧑‍🏫</span>
+                            )}
+                            
+                            <div className="absolute inset-0 bg-black/55 backdrop-blur-[0.5px] opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-all duration-200">
+                              <Camera size={18} className="text-amber-400" />
+                              <span className="text-[10px] font-black text-white px-1 leading-none">تعديل</span>
+                            </div>
+
+                            <div className="absolute bottom-1 right-1 w-6.5 h-6.5 rounded-full bg-slate-900 group-hover:bg-slate-800 text-white flex items-center justify-center shadow-xs border border-white/60 pointer-events-none transition-colors">
+                              <Camera size={10} className="text-amber-405" />
+                            </div>
+                          </button>
+                          
+                          <div className="text-center">
+                            <span className="text-xs font-black text-slate-800 block">الصورة الشخصية للأستاذ</span>
+                            <span className="text-[10px] text-slate-400 font-bold leading-relaxed block mt-0.5">انقر لتعديل صورتك</span>
+                            {preferences.teacherAvatar && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onUpdatePreferences({ teacherAvatar: '' });
+                                  triggerSuccess('تم حذف الصورة الرمزية للأستاذ.');
+                                }}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-700 underline mt-1 cursor-pointer"
+                              >
+                                حذف الصورة
+                              </button>
+                            )}
+                          </div>
                         </div>
+
+                        {/* 2. Custom Brand Logo Uploader */}
+                        <div className="flex flex-col items-center justify-center space-y-3 border-t sm:border-t-0 sm:border-r border-slate-205 pt-4 sm:pt-0 sm:pr-6">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = 'image/*';
+                              input.onchange = (e: any) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (uploadEvent) => {
+                                    const base64Str = uploadEvent.target?.result as string;
+                                    onUpdatePreferences({ dashboardLogo: base64Str });
+                                    triggerSuccess('تم تحميل شعار المنصة المخصص بنجاح! 🎨📸');
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              };
+                              input.click();
+                            }}
+                            className="relative w-24 h-24 rounded-2xl overflow-hidden border-4 border-white shadow-md flex items-center justify-center bg-slate-200 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all shrink-0"
+                            style={{ borderColor: accentColor }}
+                            title="تعديل شعار المنصة"
+                          >
+                            {preferences.dashboardLogo ? (
+                              <img 
+                                src={preferences.dashboardLogo} 
+                                alt="Dashboard Logo" 
+                                className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <span className="text-5xl select-none group-hover:scale-105 transition-transform duration-300">🎓</span>
+                            )}
+                            
+                            <div className="absolute inset-0 bg-black/55 backdrop-blur-[0.5px] opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-all duration-200">
+                              <Camera size={18} className="text-amber-400" />
+                              <span className="text-[10px] font-black text-white px-1 leading-none">تعديل الشعار</span>
+                            </div>
+
+                            <div className="absolute bottom-1 right-1 w-6.5 h-6.5 rounded-full bg-slate-900 group-hover:bg-slate-800 text-white flex items-center justify-center shadow-xs border border-white/60 pointer-events-none transition-colors">
+                              <Camera size={10} className="text-amber-405" />
+                            </div>
+                          </button>
+                          
+                          <div className="text-center">
+                            <span className="text-xs font-black text-slate-800 block">شعار / لوجو المنصة (مخصص)</span>
+                            <span className="text-[10px] text-slate-400 font-bold leading-relaxed block mt-0.5">انقر لتحميل شعارك للمنصة</span>
+                            {preferences.dashboardLogo && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onUpdatePreferences({ dashboardLogo: '' });
+                                  triggerSuccess('تم إرجاع الشعار الافتراضي للمنصة.');
+                                }}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-700 underline mt-1 cursor-pointer"
+                              >
+                                حذف الشعار
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1087,6 +1169,69 @@ export default function SettingsPanel({
                               />
                             </div>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Font Customizer Selector */}
+                      <div className="pt-6 border-t border-slate-100 space-y-4">
+                        <div>
+                          <label className="text-xs text-slate-800 font-black block flex items-center gap-1.5 font-sans">
+                            ⚙️ الخط العربي واللاتيني لواجهة التطبيق (App Typography Font)
+                          </label>
+                          <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed mt-1 font-sans">اختر نوع الخط المفضل لعرض كافة الكلمات والتقارير في التطبيق بما يناسب ذوقك الفني.</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
+                          {[
+                            { id: 'cairo', name: 'خط كيرو (Cairo)', desc: 'خط هندسي حديث', style: "'Cairo', sans-serif" },
+                            { id: 'tajawal', name: 'خط تجول (Tajawal)', desc: 'ناعم وأنيق للمستندات', style: "'Tajawal', sans-serif" },
+                            { id: 'almarai', name: 'خط المراعي (Almarai)', desc: 'عصري وواضح جداً', style: "'Almarai', sans-serif" },
+                            { id: 'amiri', name: 'خط أميري (Amiri)', desc: 'نسخي تقليدي عريق', style: "'Amiri', serif" },
+                            { id: 'changa', name: 'خط شانغا (Changa)', desc: 'جريء وبارز للعناوين', style: "'Changa', sans-serif" },
+                            { id: 'reemkufi', name: 'خط كوفي (Reem Kufi)', desc: 'فني وكلاسيكي مزخرف', style: "'Reem Kufi', sans-serif" },
+                          ].map((f) => {
+                            const isSelected = fontFamily === f.id;
+                            return (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onClick={() => {
+                                  setFontFamily(f.id);
+                                  onUpdatePreferences({ fontFamily: f.id });
+                                }}
+                                className={`flex flex-col items-start gap-1 p-3 rounded-2xl border text-right transition-all cursor-pointer ${
+                                  isSelected 
+                                    ? 'shadow-xs scale-[1.02]'
+                                    : 'border-slate-150 bg-white hover:bg-slate-50'
+                                }`}
+                                style={isSelected ? {
+                                  borderColor: accentColor,
+                                  backgroundColor: `${accentColor}08`
+                                } : {}}
+                              >
+                                <div className="flex items-center gap-2 w-full justify-between">
+                                  <span 
+                                    className="text-[12.5px] font-black"
+                                    style={{ fontFamily: f.style }}
+                                  >
+                                    {f.name}
+                                  </span>
+                                  {isSelected && (
+                                    <span 
+                                      className="w-4.5 h-4.5 rounded-full flex items-center justify-center text-white text-[9px]"
+                                      style={{ backgroundColor: accentColor }}
+                                    >
+                                      ✓
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[9.5px] text-slate-400 font-semibold">{f.desc}</span>
+                                <span className="text-[14px] mt-1 text-slate-650 opacity-80" style={{ fontFamily: f.style }}>
+                                  أبجد هوز • 1234
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 

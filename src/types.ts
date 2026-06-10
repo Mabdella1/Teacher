@@ -107,6 +107,8 @@ export interface TeacherPreferences {
   hideGoogleCalendar?: boolean; // toggle to hide Google Calendar feature from the UI
   enableAutoCloudSync?: boolean; // toggle for automated background database saving to cloud
   teacherAvatar?: string; // custom teacher profile image (Base64 string or image URL)
+  fontFamily?: string; // custom teacher app font family
+  dashboardLogo?: string; // custom teacher dashboard brand/logo image (Base64 string or URL)
 }
 
 export interface MonthlyReportItem {

@@ -895,7 +895,7 @@ export default function App() {
     const activeStudentObj = students.find(s => s.id === studentUser.id) || studentUser;
     return (
       <>
-        <ThemeStyleInjector primaryColor={preferences.primaryColor} />
+        <ThemeStyleInjector primaryColor={preferences.primaryColor} fontFamily={preferences.fontFamily} />
         <StudentPortal
           student={activeStudentObj}
           allAppointments={appointments}
@@ -915,7 +915,7 @@ export default function App() {
   if (isLocked) {
     return (
       <>
-        <ThemeStyleInjector primaryColor={preferences.primaryColor} />
+        <ThemeStyleInjector primaryColor={preferences.primaryColor} fontFamily={preferences.fontFamily} />
         <LockScreen
           storedPasscode={preferences.passcode}
           students={students}
@@ -943,7 +943,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans transition-all duration-300 relative select-none overflow-x-hidden w-full max-w-full">
-      <ThemeStyleInjector primaryColor={preferences.primaryColor} />
+      <ThemeStyleInjector primaryColor={preferences.primaryColor} fontFamily={preferences.fontFamily} />
 
       {/* Main Top Header Navigation */}
       <header className="sticky top-0 z-45 bg-white/90 backdrop-blur-md border-b border-slate-200/90 px-4 md:px-8 py-3 flex items-center justify-between shadow-xs print:hidden select-none">
@@ -959,9 +959,18 @@ export default function App() {
 
           {/* Logo Card */}
           <div className="flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-transform shrink-0">
-              <GraduationCap size={22} className="text-white" />
-            </div>
+            {preferences.dashboardLogo ? (
+              <img 
+                src={preferences.dashboardLogo} 
+                alt="شعار مخصص" 
+                className="w-10 h-10 rounded-xl object-contain shadow-md shrink-0 border border-slate-150 bg-white"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-blue-500/20 active:scale-95 transition-transform shrink-0">
+                <GraduationCap size={22} className="text-white" />
+              </div>
+            )}
             <div className="leading-none">
               <div className="flex items-center gap-1.5">
                 <span className="text-base sm:text-lg md:text-xl font-black tracking-tight text-slate-900">Teacher</span>

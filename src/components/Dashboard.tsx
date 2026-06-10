@@ -448,17 +448,45 @@ export default function Dashboard({ students, appointments, preferences, onSelec
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-sky-350/15 rounded-full blur-3xl -z-10" />
         
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-10 w-full">
-          <div className="space-y-1.5 text-right">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold bg-white/10 border border-white/20 text-white">
-              <Sparkles size={11} className="text-amber-300" />
-              لوحة التحكم الذكية السحابية
-            </span>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">
-              أهلاً بك، {teacherName} 👋
-            </h1>
-            <p className="text-xs sm:text-sm text-indigo-50 font-medium leading-relaxed">
-              إليك مراجعة بصرية ذكية شاملة وإحصائيات فورية لأداء طلابك ومستحقاتك المالية في مادة <span className="text-amber-300 font-extrabold">{subject}</span>.
-            </p>
+          <div className="flex flex-wrap items-center gap-4 text-right">
+            {preferences.teacherAvatar && (
+              <div className="relative shrink-0">
+                <img 
+                  src={preferences.teacherAvatar} 
+                  alt={teacherName} 
+                  className="w-16 h-16 rounded-2xl border-2 border-white/30 backdrop-blur-md shadow-lg object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                {preferences.dashboardLogo && (
+                  <img 
+                    src={preferences.dashboardLogo} 
+                    alt="Logo" 
+                    className="absolute -bottom-1 -left-1 w-6 h-6 rounded-lg bg-white border border-slate-100 shadow p-0.5 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+              </div>
+            )}
+            {!preferences.teacherAvatar && preferences.dashboardLogo && (
+              <img 
+                src={preferences.dashboardLogo} 
+                alt="Logo" 
+                className="w-14 h-14 rounded-2xl bg-white border border-slate-100 shadow p-1 object-contain shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <div className="space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold bg-white/10 border border-white/20 text-white">
+                <Sparkles size={11} className="text-amber-300" />
+                لوحة التحكم الذكية السحابية
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-1">
+                أهلاً بك، {teacherName} 👋
+              </h1>
+              <p className="text-xs sm:text-sm text-indigo-50 font-medium leading-relaxed">
+                إليك مراجعة بصرية ذكية شاملة وإحصائيات فورية لأداء طلابك ومستحقاتك المالية في مادة <span className="text-amber-300 font-extrabold">{subject}</span>.
+              </p>
+            </div>
           </div>
 
           <div className="bg-white text-slate-900 border border-slate-100 shadow-xl p-3.5 pr-4 rounded-2xl flex items-center gap-4 shrink-0 self-stretch md:self-auto justify-between md:justify-start min-w-[210px]">

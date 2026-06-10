@@ -6,7 +6,7 @@ import {
 import { jsPDF } from 'jspdf';
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'motion/react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, LineChart, Line } from 'recharts';
 
 interface FinancialReportsProps {
   students: Student[];
@@ -33,6 +33,8 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
   const [customNote, setCustomNote] = useState<string>('');
   const [customAmount, setCustomAmount] = useState<string>('');
   const [customType, setCustomType] = useState<'add' | 'subtract'>('add');
+  const [selectedCategory, setSelectedCategory] = useState<string>('مصروفات عامة');
+  const [chartView, setChartView] = useState<'comparison' | 'byCategory' | 'byDate' | 'monthlyTrend'>('comparison');
 
   // Input states for setting exact budget and recording lesson payments
   const [setAmountInput, setSetAmountInput] = useState<string>('');
@@ -299,6 +301,108 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
   const computedExpenses = ledger
     .filter(e => e.amount < 0 && (e.category === 'مصروفات عامة' || e.id.startsWith('manual_exp_')))
     .reduce((sum, e) => sum + Math.abs(e.amount), 0);
+
+  // Period-specific calculations for the graphical reports
+  const periodRevenues = students.reduce((sum, s) => {
+    return sum + filterByPeriod(s.payments || []).reduce((pSum, p) => pSum + p.amount, 0);
+  }, 0) + filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount > 0)).reduce((sum, e) => sum + e.amount, 0);
+
+  const periodExpenses = filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount < 0)).reduce((sum, e) => sum + Math.abs(e.amount), 0);
+
+  // Grouped expenses by their categories
+  const expensesByCategory = (() => {
+    const periodExpensesList = filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount < 0));
+    const groups: { [key: string]: number } = {};
+
+    periodExpensesList.forEach(e => {
+      const cat = e.category || 'مصروفات عامة';
+      groups[cat] = (groups[cat] || 0) + Math.abs(e.amount);
+    });
+
+    return Object.entries(groups).map(([name, value]) => ({
+      name,
+      value: Math.round(value * 100) / 100,
+      fill: '#f43f5e'
+    }));
+  })();
+
+  // Grouped expenses by their dates, sorted chronologically
+  const expensesByDate = (() => {
+    const periodExpensesList = filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount < 0));
+    const groups: { [key: string]: number } = {};
+
+    periodExpensesList.forEach(e => {
+      const rawDate = e.date || new Date().toISOString().split('T')[0];
+      groups[rawDate] = (groups[rawDate] || 0) + Math.abs(e.amount);
+    });
+
+    const sortedRawDates = Object.keys(groups).sort();
+
+    return sortedRawDates.map(rawDate => {
+      let displayDate = rawDate;
+      try {
+        const parts = rawDate.split('-');
+        if (parts.length === 3) {
+          displayDate = `${parts[2]}/${parts[1]}`;
+        }
+      } catch (err) {
+        displayDate = rawDate;
+      }
+      return {
+        name: displayDate,
+        value: Math.round(groups[rawDate] * 100) / 100,
+        fill: '#f43f5e'
+      };
+    });
+  })();
+
+  // Grouped expenses by their months, sorted chronologically
+  const expensesByMonth = (() => {
+    const periodExpensesList = filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount < 0));
+    const groups: { [key: string]: number } = {};
+
+    const monthNamesAr = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+
+    periodExpensesList.forEach(e => {
+      const rawDate = e.date || new Date().toISOString().split('T')[0];
+      const parts = rawDate.split('-');
+      if (parts.length >= 2) {
+        const yearMonth = `${parts[0]}-${parts[1].padStart(2, '0')}`;
+        groups[yearMonth] = (groups[yearMonth] || 0) + Math.abs(e.amount);
+      }
+    });
+
+    const sortedMonthKeys = Object.keys(groups).sort();
+
+    return sortedMonthKeys.map(yearMonth => {
+      const [year, month] = yearMonth.split('-');
+      const monthIndex = parseInt(month, 10) - 1;
+      const arabicMonthName = monthNamesAr[monthIndex] || `شهر ${month}`;
+      const label = activePeriod === 'all' ? `${arabicMonthName} ${year}` : arabicMonthName;
+      return {
+        name: label,
+        value: Math.round(groups[yearMonth] * 100) / 100,
+        fill: '#f43f5e'
+      };
+    });
+  })();
+
+  // Check if selected chart view has zero values to render zero states
+  const isSelectedDataZero = (() => {
+    if (chartView === 'comparison') {
+      return periodRevenues === 0 && periodExpenses === 0;
+    } else if (chartView === 'byCategory') {
+      return expensesByCategory.length === 0 || expensesByCategory.every(item => item.value === 0);
+    } else if (chartView === 'byDate') {
+      return expensesByDate.length === 0 || expensesByDate.every(item => item.value === 0);
+    } else if (chartView === 'monthlyTrend') {
+      return expensesByMonth.length === 0 || expensesByMonth.every(item => item.value === 0);
+    }
+    return false;
+  })();
 
   // Period label translator
   const getPeriodArabicLabel = () => {
@@ -888,18 +992,55 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
 
           {/* NEAT FINANCIAL DASHBOARD OVERVIEW: REVENUES, EXPENSES & BALANCE */}
           <div className="bg-white border border-slate-150 rounded-3xl p-6 shadow-sm space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-4 gap-4">
               <div className="text-right">
                 <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5 justify-start">
                   <TrendingUp size={16} className="text-blue-600" />
                   <span>التحليل البصري التفاعلي للأرباح والمصروفات</span>
                 </h3>
-                <p className="text-[11px] text-slate-400 mt-1 select-none">رسم بياني تفاعلي ومؤشر دقيق لحركة الكاش المتوفر بالمحفظة مقارنة بالمصروفات العامة.</p>
+                <p className="text-[11px] text-slate-400 mt-1 select-none">اختر التبويب المطلوب لعرض المقارنة العامة للمحفظة، أو تجميع المصروفات حسب الأقسام، أو المخطط الزمني، أو تتبع التقرير الشهري للمصروفات.</p>
               </div>
-              <div className="flex gap-2">
-                <span className="text-[10px] bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-black select-none">
-                  عرض تفاعلي مباشر
-                </span>
+              <div className="flex bg-slate-100/85 border border-slate-200/50 p-1 rounded-2xl gap-1 shrink-0 flex-wrap md:flex-nowrap justify-start md:self-auto font-sans" dir="rtl">
+                <button
+                  onClick={() => setChartView('comparison')}
+                  className={`px-3 py-1.5 text-[10.5px] font-black rounded-xl transition-all duration-150 cursor-pointer ${
+                    chartView === 'comparison'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  }`}
+                >
+                  ⚖️ الموازنة العامة
+                </button>
+                <button
+                  onClick={() => setChartView('byCategory')}
+                  className={`px-3 py-1.5 text-[10.5px] font-black rounded-xl transition-all duration-150 cursor-pointer ${
+                    chartView === 'byCategory'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/40'
+                  }`}
+                >
+                  📁 حسب التصنيف
+                </button>
+                <button
+                  onClick={() => setChartView('byDate')}
+                  className={`px-3 py-1.5 text-[10.5px] font-black rounded-xl transition-all duration-150 cursor-pointer ${
+                    chartView === 'byDate'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-950 hover:bg-white/40'
+                  }`}
+                >
+                  📅 الجدول الزمني
+                </button>
+                <button
+                  onClick={() => setChartView('monthlyTrend')}
+                  className={`px-3 py-1.5 text-[10.5px] font-black rounded-xl transition-all duration-150 cursor-pointer ${
+                    chartView === 'monthlyTrend'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-950 hover:bg-white/40'
+                  }`}
+                >
+                  📈 التقرير الشهري
+                </button>
               </div>
             </div>
 
@@ -967,32 +1108,109 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                 </div>
               </div>
 
-              {/* Recharts Column chart representing comparative views */}
+              {/* Recharts Column chart representing comparative/grouped views */}
               <div className="lg:col-span-8">
-                <div className="h-[230px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={[
-                        { name: 'إجمالي المداخيل 🟢', value: computedRevenues, fill: '#10b981' },
-                        { name: 'المصروفات العامة 🔴', value: computedExpenses, fill: '#f43f5e' },
-                        { name: 'صافي التوازن المالي 🔵', value: computedRevenues - computedExpenses, fill: '#3b82f6' }
-                      ]}
-                      margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 'bold', fill: '#64748b' }} axisLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} />
-                      <Tooltip 
-                        contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'right', direction: 'rtl' }}
-                        formatter={(value: any) => [`${value} ${currency}`, 'القيمة']}
-                      />
-                      <Bar dataKey="value" radius={[10, 10, 0, 0]} maxBarSize={60}>
-                        <Cell fill="#10b981" />
-                        <Cell fill="#f43f5e" />
-                        <Cell fill="#3b82f6" />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="h-[230px] w-full mt-2" dir="ltr">
+                  {isSelectedDataZero ? (
+                    <div className="h-full w-full flex flex-col justify-center items-center text-center p-6 bg-slate-50/70 rounded-2xl border border-dashed border-slate-205 select-none" dir="rtl">
+                      <span className="text-4xl animate-bounce duration-1000">📊</span>
+                      <h4 className="text-xs font-black text-slate-700 mt-2">لا توجد بيانات متاحة لعرضها حالياً في تصفية {activePeriod === 'all' ? 'جميع الأوقات' : getPeriodArabicLabel()}</h4>
+                      <p className="text-[10px] text-slate-400 mt-1 max-w-sm leading-relaxed mx-auto">
+                        {chartView === 'comparison' 
+                          ? 'لم يتم تسجيل أي أرباح أو مصروفات في المحفظة لهذه الفترة الزمنية المحددة بالفلتر.' 
+                          : chartView === 'byCategory'
+                          ? 'لا توجد قيود مصروفات مسجلة ومصفاة ضمن الفترات الزمنية حالياً. جرب تسجيل مصروف مع تصنيف.'
+                          : chartView === 'byDate'
+                          ? 'لا توجد مصروفات مسجلة بتواريخ محددة لإظهار حركة الكاش الزمني.'
+                          : 'لا توجد مصروفات مسجلة لتوضيح المخطط البياني للاتجاه الشهري للمصروفات.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      {chartView === 'monthlyTrend' ? (
+                        <LineChart
+                          data={expensesByMonth}
+                          margin={{ top: 15, right: 15, left: -25, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 9.5, fontWeight: 'bold', fill: '#475569' }} 
+                            tickLine={false}
+                            axisLine={false} 
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 9, fill: '#64748b' }} 
+                            tickLine={false}
+                            axisLine={false} 
+                          />
+                          <Tooltip 
+                            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'right', direction: 'rtl', fontFamily: 'sans-serif' }}
+                            formatter={(value: any) => [`${value} ${currency}`, 'إجمالي المصروفات']}
+                          />
+                          <Line 
+                            type="monotone"
+                            dataKey="value" 
+                            stroke="#f43f5e" 
+                            strokeWidth={3}
+                            activeDot={{ r: 6 }}
+                            dot={{ r: 4, stroke: '#f43f5e', strokeWidth: 2, fill: '#fff' }}
+                          />
+                        </LineChart>
+                      ) : (
+                        <BarChart
+                          data={
+                            chartView === 'comparison'
+                              ? [
+                                  { name: 'الإيرادات 🟢', value: periodRevenues, fill: '#10b981' },
+                                  { name: 'المصروفات 🔴', value: periodExpenses, fill: '#f43f5e' },
+                                  { name: 'صافي الرصيد 🔵', value: periodRevenues - periodExpenses, fill: '#3b82f6' }
+                                ]
+                              : chartView === 'byCategory'
+                              ? expensesByCategory
+                              : expensesByDate
+                          }
+                          margin={{ top: 15, right: 10, left: -25, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 9.5, fontWeight: 'bold', fill: '#475569' }} 
+                            tickLine={false}
+                            axisLine={false} 
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 9, fill: '#64748b' }} 
+                            tickLine={false}
+                            axisLine={false} 
+                          />
+                          <Tooltip 
+                            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'right', direction: 'rtl', fontFamily: 'sans-serif' }}
+                            formatter={(value: any) => [`${value} ${currency}`, 'القيمة']}
+                          />
+                          <Bar dataKey="value" radius={[10, 10, 0, 0]} maxBarSize={50}>
+                            {
+                              chartView === 'comparison'
+                                ? [
+                                    { name: 'الإيرادات 🟢', value: periodRevenues, fill: '#10b981' },
+                                    { name: 'المصروفات 🔴', value: periodExpenses, fill: '#f43f5e' },
+                                    { name: 'صافي الرصيد 🔵', value: periodRevenues - periodExpenses, fill: '#3b82f6' }
+                                  ].map((entry, index) => (
+                                    <Cell key={`cell-exp-${index}`} fill={entry.fill} />
+                                  ))
+                                : chartView === 'byCategory'
+                                ? expensesByCategory.map((entry, index) => (
+                                    <Cell key={`cell-cat-${index}`} fill={entry.fill} />
+                                  ))
+                                : expensesByDate.map((entry, index) => (
+                                    <Cell key={`cell-date-${index}`} fill={entry.fill} />
+                                  ))
+                            }
+                          </Bar>
+                        </BarChart>
+                      )}
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
             </div>
@@ -1039,6 +1257,31 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                   />
                 </div>
 
+                {/* Category input dynamic dropdown */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-black text-slate-600">تصنيف أو تبويب العملية (القسم):</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-right font-bold text-slate-700 cursor-pointer"
+                  >
+                    <optgroup label="📂 أقسام المصروفات">
+                      <option value="مصروفات عامة">مصروفات عامة 💸</option>
+                      <option value="أدوات ومستلزمات مكتبية">أدوات ومستلزمات مكتبية 📚</option>
+                      <option value="إيجار وقاعات وضيافة">إيجار وقاعات وضيافة 🏠</option>
+                      <option value="رواتب وأجور ومساعدين">رواتب وأجور ومساعدين 👥</option>
+                      <option value="اشتراكات تقنية ومنصات">اشتراكات تقنية ومنصات 💻</option>
+                      <option value="دعاية وتسويق ومطبوعات">دعاية وتسويق ومطبوعات 📢</option>
+                    </optgroup>
+                    <optgroup label="💰 أقسام الإيرادات">
+                      <option value="إيرادات عامة">إيرادات عامة 🟢</option>
+                      <option value="بيع كتب وملازم">بيع كتب وملازم 📖</option>
+                      <option value="دعم وتمويل خارجي">دعم وتمويل خارجي 🪙</option>
+                      <option value="إيرادات أخرى">إيرادات أخرى 🌟</option>
+                    </optgroup>
+                  </select>
+                </div>
+
                 {/* Two buttons representing Revenues vs Expenses */}
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   
@@ -1050,17 +1293,23 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                       if (isNaN(parsed) || parsed <= 0) return;
                       const change = parsed;
                       const newBalance = budgetBalance + change;
+                      
+                      const validIncomeCategories = ['إيرادات عامة', 'بيع كتب وملازم', 'دعم وتمويل خارجي', 'إيرادات أخرى'];
+                      const finalCat = validIncomeCategories.includes(selectedCategory) 
+                        ? selectedCategory 
+                        : 'إيرادات عامة';
+
                       const newEntry: BudgetLedgerEntry = {
                         id: 'manual_rev_' + Date.now(),
                         amount: change,
                         date: new Date().toISOString().split('T')[0],
-                        note: customNote.trim() || 'إيراد يدوي مسجل',
-                        category: 'إيرادات عامة'
+                        note: customNote.trim() || `إيراد مسجل بقسم: ${finalCat}`,
+                        category: finalCat
                       };
                       saveBudget(newBalance, [newEntry, ...ledger]);
                       setCustomAmount('');
                       setCustomNote('');
-                      setSuccessFeedback(`تم بنجاح تسجيل إيراد جديد بقيمة +${parsed} ${currency}`);
+                      setSuccessFeedback(`تم بنجاح تسجيل إيراد جديد بقيمة +${parsed} ${currency} تحت قسم ${finalCat}`);
                       setTimeout(() => setSuccessFeedback(''), 5000);
                     }}
                     className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5 shadow-sm"
@@ -1077,17 +1326,23 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                       if (isNaN(parsed) || parsed <= 0) return;
                       const change = -parsed;
                       const newBalance = budgetBalance + change;
+
+                      const validExpenseCategories = ['مصروفات عامة', 'أدوات ومستلزمات مكتبية', 'إيجار وقاعات وضيافة', 'رواتب وأجور ومساعدين', 'اشتراكات تقنية ومنصات', 'دعاية وتسويق ومطبوعات'];
+                      const finalCat = validExpenseCategories.includes(selectedCategory)
+                        ? selectedCategory
+                        : 'مصروفات عامة';
+
                       const newEntry: BudgetLedgerEntry = {
                         id: 'manual_exp_' + Date.now(),
                         amount: change,
                         date: new Date().toISOString().split('T')[0],
-                        note: customNote.trim() || 'مصروف يدوي مسجل',
-                        category: 'مصروفات عامة'
+                        note: customNote.trim() || `مصروف مسجل بقسم: ${finalCat}`,
+                        category: finalCat
                       };
                       saveBudget(newBalance, [newEntry, ...ledger]);
                       setCustomAmount('');
                       setCustomNote('');
-                      setSuccessFeedback(`تم بنجاح تسجيل مصروف جديد بقيمة -${parsed} ${currency}`);
+                      setSuccessFeedback(`تم بنجاح تسجيل مصروف جديد بقيمة -${parsed} ${currency} تحت قسم ${finalCat}`);
                       setTimeout(() => setSuccessFeedback(''), 5000);
                     }}
                     className="bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs py-3 px-4 rounded-xl transition cursor-pointer active:scale-95 duration-100 flex items-center justify-center gap-1.5 shadow-sm"
