@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Student, Appointment, TeacherPreferences, ExamAppointment } from '../types';
-import { Calendar, Plus, Clock, Trash2, X, CalendarDays, ClipboardCheck, AlertTriangle, GripVertical, RefreshCw, LogOut, CalendarClock, Bell, BellRing, BookOpen, Compass, Sun, Brain, Target, Award, Rocket, Coffee } from 'lucide-react';
+import { Calendar, Plus, Clock, Trash2, X, CalendarDays, ClipboardCheck, AlertTriangle, GripVertical, RefreshCw, LogOut, CalendarClock, Bell, BellRing, BookOpen, Compass, Sun, Brain, Target, Award, Rocket, Coffee, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatTimeTo12h } from '../lib/timeUtils';
 import { initAuth, googleSignIn, logout, getAccessToken } from '../lib/firebaseAuth';
@@ -206,6 +206,19 @@ export default function Scheduler({
   const [reminderModalStudent, setReminderModalStudent] = useState<Student | null>(null);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderNote, setReminderNote] = useState('');
+
+  // Generate WhatsApp Quick Chat Connection Link
+  const getWhatsappLink = (phone: string, text: string) => {
+    if (!phone) return '#';
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    let finalPhone = cleaned;
+    if (cleaned.startsWith('01') && cleaned.length === 11) {
+      finalPhone = `+2${cleaned}`;
+    } else if (!cleaned.startsWith('+') && cleaned.length === 10) {
+      finalPhone = `+20${cleaned}`;
+    }
+    return `https://wa.me/${finalPhone.replace('+', '')}?text=${encodeURIComponent(text)}`;
+  };
 
   const getNextDateForDay = (arabicDayName: string): string => {
     const today = new Date();
@@ -793,6 +806,23 @@ export default function Scheduler({
                             >
                               <Bell size={12} className={studentRecord?.customReminderDate ? 'fill-amber-400 text-amber-550' : ''} />
                             </button>
+
+                            {studentRecord?.phone && (
+                              <a
+                                href={getWhatsappLink(
+                                  studentRecord.phone,
+                                  app.isExceptional
+                                    ? `أهلاً يا ${app.studentName}، نود تذكيرك بموعد حصتك الاستثنائية القادمة المقررة بتاريخ ${app.date} في تمام الساعة ${formatTimeTo12h(app.time)}.`
+                                    : `أهلاً يا ${app.studentName}، نود تذكيرك بموعد حصتك الأسبوعية المقررة يوم ${app.dayOfWeek} في تمام الساعة ${formatTimeTo12h(app.time)}.`
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1.5 rounded-lg text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 transition-all text-center cursor-pointer flex items-center justify-center"
+                                title="إرسال تذكير عبر واتساب"
+                              >
+                                <MessageSquare size={12} className="fill-emerald-100" />
+                              </a>
+                            )}
 
                             <button
                               type="button"

@@ -828,8 +828,13 @@ export default function CalendarView({ students, appointments, onSelectStudent }
                         href={getWhatsappLink(
                           matchedStudentObj.phone, 
                           selectedEvent.eventType === 'session' 
-                            ? `مرحبا ${matchedStudentObj.name}، بخصوص حصتنا المنجزة بتاريخ ${selectedEvent.dateStr}...` 
-                            : `مرحبا ${matchedStudentObj.name}، تذكير بموعد حصتنا القادمة المقررة في يوم السبت الساعة ${formatTimeTo12h(selectedEvent.time)}...`
+                            ? `أهلاً يا ${matchedStudentObj.name}، بخصوص حصتنا المنجزة بتاريخ ${selectedEvent.dateStr}.` 
+                            : (() => {
+                                const parts = selectedEvent.dateStr.split('-');
+                                const dateObjForDay = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                                const eventDayName = JS_TO_AR_DAY[dateObjForDay.getDay()] || 'السبت';
+                                return `أهلاً يا ${matchedStudentObj.name}، نود تذكيرك بموعد حصتك القادمة المقررة يوم ${eventDayName} الموافق ${selectedEvent.dateStr} في تمام الساعة ${formatTimeTo12h(selectedEvent.time)}.`;
+                              })()
                         )}
                         target="_blank"
                         rel="noreferrer"

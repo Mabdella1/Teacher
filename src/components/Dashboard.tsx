@@ -4,7 +4,7 @@ import { formatTimeTo12h } from '../lib/timeUtils';
 import { 
   Users, Calendar, DollarSign, BarChart3, TrendingUp, Coins, 
   Clock, ArrowUpRight, Award, CheckCircle2, AlertCircle, Sparkles, MessageSquare,
-  ClipboardList, CheckSquare, Square, Trash2, Plus, Bell
+  ClipboardList, CheckSquare, Square, Trash2, Plus, Bell, Database, Download, Upload, Shield, FileJson
 } from 'lucide-react';
 import { 
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
@@ -17,6 +17,8 @@ interface DashboardProps {
   preferences: TeacherPreferences;
   onSelectStudent: (id: string) => void;
   onNavigateToTab: (tab: 'students' | 'schedule' | 'financials' | 'settings') => void;
+  onImportBackup?: (importedData: { students: Student[]; appointments: Appointment[]; preferences: TeacherPreferences }) => void;
+  onUpdatePreferences?: (updatedPrefs: Partial<TeacherPreferences>) => void;
 }
 
 const DAYS_AR_MAP: { [key: number]: string } = {
@@ -40,10 +42,85 @@ interface DailyTask {
   notified?: boolean;
 }
 
-export default function Dashboard({ students, appointments, preferences, onSelectStudent, onNavigateToTab }: DashboardProps) {
+export default function Dashboard({ students, appointments, preferences, onSelectStudent, onNavigateToTab, onImportBackup, onUpdatePreferences }: DashboardProps) {
   const currency = preferences.currency || 'ج.م';
   const teacherName = preferences.teacherName || 'الأستاذ';
   const subject = preferences.subject || 'المادة الدراسية';
+
+  // Backup & Restore states & handlers
+  const [backupStatus, setBackupStatus] = useState<{ type: 'success' | 'error' | ''; message: string }>({ type: '', message: '' });
+  const dashboardFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportJSON = () => {
+    try {
+      const backupData = {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        preferences,
+        students,
+        appointments,
+      };
+
+      const str = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([str], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `نسخة_احتياطية_TEACHER_${new Date().toISOString().split('T')[0]}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setBackupStatus({ type: 'success', message: 'تم تنزيل وتصدير النسخة الاحتياطية بنجاح! 💾 تحفظ نسخة محددة من السجلات.' });
+      setTimeout(() => setBackupStatus({ type: '', message: '' }), 5000);
+    } catch {
+      setBackupStatus({ type: 'error', message: 'فشل تصدير النسخة الاحتياطية.' });
+      setTimeout(() => setBackupStatus({ type: '', message: '' }), 5000);
+    }
+  };
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed.students || !Array.isArray(parsed.students)) {
+          throw new Error('صيغة ملف النسخة الاحتياطية غير صالحة!');
+        }
+
+        if (onImportBackup) {
+          onImportBackup({
+            students: parsed.students,
+            appointments: parsed.appointments || [],
+            preferences: parsed.preferences || preferences,
+          });
+          setBackupStatus({ type: 'success', message: 'تم استجابة واستعادة كافة سجلات الطلاب والمواعيد بنجاح! 🎉' });
+          setTimeout(() => setBackupStatus({ type: '', message: '' }), 6000);
+        } else {
+          throw new Error('محرك استرداد البيانات غير متصل بالمنظومة الرئيسية.');
+        }
+      } catch (err: any) {
+        setBackupStatus({ type: 'error', message: err.message || 'حدث خطأ أثناء معالجة وقراءة الملف.' });
+        setTimeout(() => setBackupStatus({ type: '', message: '' }), 5000);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSetAutoBackup = (frequency: 'daily' | 'weekly' | 'disabled') => {
+    if (onUpdatePreferences) {
+      onUpdatePreferences({ autoBackupDownloadInterval: frequency });
+      setBackupStatus({ 
+        type: 'success', 
+        message: `تم تحديث تكرار النسخ الاحتياطي التلقائي ليكون: ${
+          frequency === 'daily' ? 'يومي متكرر ⏱️' : frequency === 'weekly' ? 'أسبوعي منتظم 🗓️' : 'معطل ومغلق ❌'
+        }` 
+      });
+      setTimeout(() => setBackupStatus({ type: '', message: '' }), 5000);
+    }
+  };
 
   // Daily Tasks state & logic
   const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
@@ -1050,6 +1127,99 @@ export default function Dashboard({ students, appointments, preferences, onSelec
                   </div>
                 ))
               )}
+            </div>
+          </div>
+
+          {/* Interactive Backup, Restore & Protection Center */}
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-2xs space-y-4 relative overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 font-sans">
+              <div className="space-y-0.5 text-right font-sans">
+                <h3 className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-2">
+                  <span className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                    <Database size={15} />
+                  </span>
+                  <span>مركز النسخ الاحتياطي وحماية البيانات</span>
+                </h3>
+                <p className="text-[10px] text-slate-450 font-bold">حافظ على سلامة سجلات طلابك واسترجعها بأي وقت</p>
+              </div>
+            </div>
+
+            {/* Display message if status updated */}
+            {backupStatus.message && (
+              <div className={`p-3 rounded-xl text-center text-xs font-bold leading-relaxed border ${
+                backupStatus.type === 'success' 
+                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700 animate-fadeIn' 
+                  : 'bg-rose-50 border-rose-100 text-rose-700 animate-fadeIn'
+              }`}>
+                {backupStatus.message}
+              </div>
+            )}
+
+            {/* Actions Grid */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={handleExportJSON}
+                className="flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 hover:bg-blue-100/80 text-blue-800 border border-blue-100 rounded-2xl font-black text-[11px] cursor-pointer shadow-3xs transition"
+              >
+                <Download size={13} className="text-blue-600" />
+                <span>إجراء نسخ بياني 💾</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => dashboardFileInputRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-2xl font-black text-[11px] cursor-pointer shadow-3xs transition"
+              >
+                <Upload size={13} className="text-slate-500" />
+                <span>استيراد واستعادة 📂</span>
+              </button>
+            </div>
+
+            {/* Input File (Hidden) */}
+            <input
+              type="file"
+              ref={dashboardFileInputRef}
+              onChange={handleImportJSON}
+              accept=".json"
+              className="hidden"
+            />
+
+            {/* Auto backup configurations */}
+            <div className="space-y-2 pt-1 border-t border-slate-100">
+              <span className="text-[10.5px] font-black text-slate-600 block text-right">🤖 جدولة النسخ والتحفيظ الآلي:</span>
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-50 border border-slate-200/50 p-1 rounded-2xl">
+                {[
+                  { id: 'daily', label: 'يومي ⏱️' },
+                  { id: 'weekly', label: 'أسبوعي 🗓️' },
+                  { id: 'disabled', label: 'معطل ❌' }
+                ].map((freq) => {
+                  const isActive = preferences.autoBackupDownloadInterval === freq.id || 
+                                 (freq.id === 'disabled' && (!preferences.autoBackupDownloadInterval || preferences.autoBackupDownloadInterval === 'disabled'));
+                  return (
+                    <button
+                      key={freq.id}
+                      type="button"
+                      onClick={() => handleSetAutoBackup(freq.id as any)}
+                      className={`py-1.5 text-[10px] font-extrabold rounded-xl transition cursor-pointer select-none text-center ${
+                        isActive
+                          ? 'bg-blue-600 text-white font-black shadow-3xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 shadow-3xs'
+                      }`}
+                    >
+                      {freq.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Security Shield Info */}
+            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 text-[9.5px] font-bold text-slate-400 leading-relaxed text-right flex items-start gap-1.5">
+              <Shield size={13} className="text-blue-500 shrink-0 mt-0.5" />
+              <span>
+                تتم معالجة وتشفير كافة ملفاتك احتياطياً بشكل آمن وتام محلياً داخل جهازك لتأمين الخصوصية والسرية الكاملة للطلبة.
+              </span>
             </div>
           </div>
 

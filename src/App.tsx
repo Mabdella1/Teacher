@@ -1385,6 +1385,8 @@ export default function App() {
                       setActiveTab(tab);
                       setSelectedStudentId(null);
                     }}
+                    onImportBackup={handleImportSystemBackup}
+                    onUpdatePreferences={savePreferences}
                   />
                 )}
 

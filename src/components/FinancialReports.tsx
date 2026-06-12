@@ -470,6 +470,65 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
     }
   };
 
+  // Function to capture and download report breakdown and expenses into a standard CSV file read by Excel easily
+  const handleExportExcel = () => {
+    try {
+      // Create CSV content with UTF-8 BOM to ensure Arabic displays correctly in Excel
+      let csvContent = "\uFEFF";
+      
+      // Header Section
+      csvContent += `"التقرير المالي والشؤون المالية للطلاب - منصة المعلم الذكية TEACHER"\n`;
+      csvContent += `"تاريخ التصدير:","${new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}"\n`;
+      csvContent += `"الفترة المحددة التصفية:","${getPeriodArabicLabel()}"\n`;
+      csvContent += `\n`;
+      
+      // Summary metrics
+      csvContent += `"المؤشر المالي","القيمة بالعملة (${currency})"\n`;
+      csvContent += `"إجمالي الدخل المتوقع","${totalIncome}"\n`;
+      csvContent += `"إجمالي المبالغ المحصلة فعلياً","${totalPayments}"\n`;
+      csvContent += `"إجمالي المستحقات المعلقة","${totalOutstandingDues}"\n`;
+      csvContent += `"إجمالي المصروفات المنفذة","${periodExpenses}"\n`;
+      csvContent += `"صافي الربح المالي للفترة","${totalPayments - periodExpenses}"\n`;
+      csvContent += `\n`;
+      
+      // Breakdown Table
+      csvContent += `"جدول تفاصيل حسابات الطلاب للفتـرة:"\n`;
+      csvContent += `"اسم الطالب","نوع الاشتراك","عدد الحصص المنفذة خلال الفترة","المبلغ المستحق بالفترة","المسدد الفعلي بالفترة","المتبقي المطلوب بالفترة"\n`;
+      
+      reportBreakdown.forEach(item => {
+        const typeAr = item.studentType === 'lesson' ? 'حصص فردية' : 'اشتراك كورس';
+        csvContent += `"${item.studentName.replace(/"/g, '""')}","${typeAr}","${item.sessionsCount}","${item.income}","${item.paid}","${item.dues}"\n`;
+      });
+      
+      csvContent += `\n`;
+      
+      // Expenses Table
+      csvContent += `"جدول المصروفات والتدفقات الخارجة للفترة:"\n`;
+      csvContent += `"البيان أو الملاحظة","تاريخ الصرف","التصنيف","المبلغ المستهلك"\n`;
+      
+      const periodExpensesList = filterByPeriod<BudgetLedgerEntry>(ledger.filter(e => e.amount < 0));
+      if (periodExpensesList.length === 0) {
+        csvContent += `"لا يوجد مصروفات مسجلة ضمن المدة المحددة"\n`;
+      } else {
+        periodExpensesList.forEach(e => {
+          csvContent += `"${(e.note || '').replace(/"/g, '""')}","${e.date}","${e.category || 'عامة'}","${Math.abs(e.amount)}"\n`;
+        });
+      }
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `التقرير_المالي_${activePeriod}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Failed to export CSV/Excel:', error);
+      alert('حدث خطأ أثناء تصدير ملف إكسل. يرجى المحاولة مرة أخرى.');
+    }
+  };
+
   return (
     <div className="space-y-6 text-right font-sans" dir="rtl">
       
@@ -550,6 +609,15 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                   <FileText size={15} />
                 )}
                 <span>تصدير التقرير PDF (صفحة واحدة)</span>
+              </button>
+
+              {/* Export CSV / Excel */}
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100/80 text-emerald-700 text-xs font-black px-4 py-2 rounded-xl transition cursor-pointer duration-200 shadow-3xs"
+              >
+                <Download size={15} className="text-emerald-600" />
+                <span>تصدير التقرير Excel (.csv)</span>
               </button>
             </div>
           </div>
@@ -1498,9 +1566,60 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
               </p>
             </div>
 
+            {/* Graphical representation of financial performance */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5">
+              <p className="text-[11px] font-black text-slate-600 flex items-center gap-1 justify-end">
+                <span>📊 التمثيل البياني لهيكل الأداء المالي للفترة</span>
+              </p>
+              
+              <div className="flex gap-4 items-end justify-center h-24 px-6 pt-2">
+                {/* Expected Income Bar */}
+                <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                  <div className="w-full bg-slate-250/30 bg-slate-200 rounded-t-lg h-14 relative flex items-end">
+                    <div className="bg-blue-600 w-full rounded-t-lg transition-all duration-500" style={{ height: '100%' }}>
+                      <div className="absolute top-[-16px] left-0 right-0 text-center font-mono text-[9px] font-black text-blue-700">
+                        {totalIncome.toLocaleString()} {currency}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-center text-[10px] font-black text-blue-800">
+                    الدخل الكلي المتوقع
+                  </div>
+                </div>
+
+                {/* Collected Payments Bar */}
+                <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                  <div className="w-full bg-slate-250/30 bg-slate-200 rounded-t-lg h-14 relative flex items-end">
+                    <div className="bg-emerald-600 w-full rounded-t-lg transition-all duration-500" style={{ height: `${totalIncome > 0 ? Math.min(100, (totalPayments / totalIncome) * 100) : 100}%` }}>
+                      <div className="absolute top-[-16px] left-0 right-0 text-center font-mono text-[9px] font-black text-emerald-700">
+                        {totalPayments.toLocaleString()} {currency}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-center text-[10px] font-black text-emerald-800">
+                    المدفوع الفعلي ({totalIncome > 0 ? Math.round((totalPayments / totalIncome) * 100) : 100}%)
+                  </div>
+                </div>
+
+                {/* Outstanding Dues Bar */}
+                <div className="flex-1 flex flex-col items-center justify-end h-full relative">
+                  <div className="w-full bg-slate-250/30 bg-slate-200 rounded-t-lg h-14 relative flex items-end">
+                    <div className="bg-rose-600 w-full rounded-t-lg transition-all duration-500" style={{ height: `${totalIncome > 0 ? Math.min(100, (totalOutstandingDues / totalIncome) * 100) : 0}%` }}>
+                      <div className="absolute top-[-16px] left-0 right-0 text-center font-mono text-[9px] font-black text-rose-700">
+                        {totalOutstandingDues.toLocaleString()} {currency}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 text-center text-[10px] font-black text-rose-800">
+                    المستحقات المتبقية
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Detailed Table for PDF - Designed with compact padding to fit exactly 1 page */}
             <div>
-              <p className="text-xs font-black text-slate-500 mb-3 block">تفاصيل حسابات الطلبة المنجزة للفترة:</p>
+              <p className="text-xs font-black text-slate-500 mb-2 block">تفاصيل حسابات الطلبة المنجزة للفترة:</p>
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
                 <table className="w-full text-right text-[10px]">
                   <thead className="bg-slate-50 text-slate-600 font-extrabold border-b border-slate-200">
@@ -1514,7 +1633,7 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                    {reportBreakdown.slice(0, 14).map((item) => ( // Show top 14 items to safely maintain A4 single sheet boundary
+                    {reportBreakdown.slice(0, 9).map((item) => ( // Show top 9 items to safely maintain A4 single sheet boundary with graph
                       <tr key={item.studentId + '_pdf'}>
                         <td className="py-2 px-3 font-extrabold text-slate-900">{item.studentName}</td>
                         <td className="py-2 px-3 text-center">
@@ -1528,10 +1647,10 @@ export default function FinancialReports({ students, currency = 'ج.م', onUpdat
                         </td>
                       </tr>
                     ))}
-                    {reportBreakdown.length > 14 && (
+                    {reportBreakdown.length > 9 && (
                       <tr>
-                        <td colSpan={6} className="py-2 px-3 text-center text-slate-455 font-bold italic bg-slate-50">
-                          * تم إظهار أول ١٤ طالب فقط لبيانات التوافق الحجمي للورقة الواحدة. يرحى استخدام شاشة العرض لرؤية القائمة الإجمالية.
+                        <td colSpan={6} className="py-2 px-3 text-center text-slate-455 font-bold italic bg-slate-50 leading-none">
+                          * تم إظهار أول ٩ طلاب فقط لبيانات التوافق الحجمي للورقة الواحدة. يرجى استخدام شاشة العرض لرؤية القائمة الإجمالية.
                         </td>
                       </tr>
                     )}
